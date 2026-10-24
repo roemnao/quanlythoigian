@@ -9,6 +9,11 @@ import { pushGoogle } from './google.js';
 
 const MAX_LEN = 1900; // Zalo giới hạn độ dài tin nhắn, chia nhỏ cho an toàn.
 
+// Ai nhận tin nhắn của bot: 'web' (web giữ webhook) hoặc 'agent' (AI agent khác giữ webhook, web chỉ gửi).
+export function zaloReceiver(store) {
+  return store.data.settings?.zaloReceiver === 'agent' ? 'agent' : 'web';
+}
+
 export function zaloConfigured() {
   return Boolean(cfg('ZALO_BOT_TOKEN'));
 }
@@ -93,15 +98,17 @@ function describeSuggestion(s, i) {
 }
 
 // Xử lý một tin nhắn, trả về câu trả lời. Có thể thay đổi store (người gọi tự lưu).
-export async function handleText(store, chatId, text, { name, items: preExtracted } = {}) {
+// trusted: tin chuyển qua từ AI agent (đã xác thực bằng khoá API) → coi như chủ web.
+export async function handleText(store, chatId, text, { name, items: preExtracted, trusted = false } = {}) {
   const t = (text || '').trim();
   const [cmd, arg] = t.split(/\s+/, 2);
   const lower = (cmd || '').toLowerCase();
   const owner = ownerChatId(store);
-  const isOwner = owner && String(owner) === String(chatId);
+  const isOwner = trusted || (owner && String(owner) === String(chatId));
 
   if (lower === '/id') return `ID cuộc trò chuyện: ${chatId}`;
   if (lower === '/ketnoi') {
+    if (!chatId) return '❌ Thiếu ID người gửi (chatId) nên không ghép nối được.';
     const { pairCode: code, pairExpires } = store.data.meta;
     if (!code || arg !== code || (pairExpires && Date.now() > new Date(pairExpires).getTime())) return '❌ Mã không đúng hoặc đã hết hạn. Mở web → Cài đặt để lấy mã mới.';
     store.data.meta.zaloChatId = String(chatId);

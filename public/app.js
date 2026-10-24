@@ -542,8 +542,34 @@ function renderSettings() {
     h('span', {}, h('i', { class: `dot ${c.storage !== 'tmp' ? 'on' : 'off'}` }), 'Lưu trữ'));
 
   const z = $('#zalo-box');
+  const receiverSeg = h('div', { class: 'seg' }, [['web', 'Web này'], ['agent', 'AI agent của tôi']].map(([k, label]) =>
+    h('button', { type: 'button', class: c.zaloReceiver === k ? 'on' : '', onclick: guard(async () => {
+      if (k === c.zaloReceiver) return;
+      if (k === 'web' && !confirm('Web sẽ đăng ký nhận tin của bot. AI agent đang dùng chung bot sẽ KHÔNG nhận được tin nữa. Tiếp tục?')) return;
+      const r = await api('PUT', '/api/settings/zalo-receiver', { receiver: k });
+      toast(k === 'agent' ? 'Web chỉ gửi nhắc việc, AI agent giữ việc nhận tin' : r.webhook ? 'Web đã nhận lại tin nhắn của bot' : 'Đã chuyển', 5000);
+      await load();
+    }) }, label)));
   if (!c.zalo) {
     z.replaceChildren(h('p', { class: 'muted small' }, 'Chưa có token bot Zalo. Dán token vào mục Khoá API ở đầu trang rồi bấm Lưu.'));
+  } else if (c.zaloReceiver === 'agent') {
+    const idInput = h('input', { placeholder: 'ID Zalo của bạn (agent biết ID này)', class: 'grow' });
+    z.replaceChildren(
+      h('p', { class: 'small' }, 'Ai nhận tin nhắn của bot?'), receiverSeg,
+      h('p', { class: 'small muted' }, 'AI agent của bạn giữ việc nhận tin. Web chỉ ', h('b', {}, 'gửi'), ' nhắc việc và tóm tắt buổi sáng qua bot (gửi tin không xung đột). Muốn agent xử lý lịch, xem thẻ "Kết nối AI agent".'),
+      c.zaloOwner
+        ? h('div', {}, h('p', { class: 'small' }, '✅ Đang gửi nhắc việc tới tài khoản Zalo đã ghép nối', c.zaloOwner.name ? ` (${c.zaloOwner.name})` : '', '.'),
+          h('div', { class: 'row' },
+            h('button', { class: 'btn sm', onclick: guard(async () => { await api('POST', '/api/zalo/test'); toast('Đã gửi tin thử. Kiểm tra Zalo nhé!'); }) }, 'Gửi tin thử'),
+            !c.zaloOwner.fromEnv && h('button', { class: 'btn sm ghost danger', onclick: guard(async () => {
+              if (!confirm('Ngừng gửi nhắc việc tới tài khoản này?')) return;
+              await api('POST', '/api/zalo/unpair'); await load();
+            }) }, 'Ngắt')))
+        : h('div', {}, h('p', { class: 'small' }, 'Nhập ID Zalo của bạn để nhận nhắc việc (agent nhận được ID này trong mỗi tin nhắn, thường là ', h('code', {}, 'message.chat.id'), '):'),
+          h('div', { class: 'row' }, idInput, h('button', { class: 'btn sm primary', onclick: guard(async () => {
+            if (!idInput.value.trim()) throw new Error('Chưa nhập ID');
+            await api('PUT', '/api/settings/zalo-receiver', { receiver: 'agent', chatId: idInput.value.trim() }); toast('Đã lưu'); await load();
+          }) }, 'Lưu'))));
   } else {
     const steps = [];
     if (c.zaloMode === 'webhook') {
@@ -571,9 +597,11 @@ function renderSettings() {
             pairCode = (await api('POST', '/api/zalo/pair')).code; renderSettings();
           }) }, 'Lấy mã ghép nối'))));
     }
-    z.replaceChildren(h('ol', { class: 'steps' }, steps),
+    z.replaceChildren(h('p', { class: 'small' }, 'Ai nhận tin nhắn của bot?'), receiverSeg, h('ol', { class: 'steps' }, steps),
       h('p', { class: 'small muted' }, 'Sau khi ghép nối: gửi nội dung bất kỳ cho bot để tạo lịch; lệnh /homnay, /mai, /viec, /cho, /duyet all.'));
   }
+
+  renderAgent(c);
 
   const cron = $('#cron-box');
   cron.replaceChildren(
@@ -611,6 +639,37 @@ function renderSettings() {
   const pf = $('#password-form');
   pf.current.hidden = c.google.noPassword; pf.current.required = !c.google.noPassword;
   pf.querySelector('button').textContent = c.google.noPassword ? 'Đặt mật khẩu' : 'Đổi mật khẩu';
+}
+
+// Thẻ "Kết nối AI agent": khoá API + địa chỉ + ví dụ.
+let agentToken = null; // chỉ có ngay sau khi tạo (máy chủ không lưu bản gốc)
+function renderAgent(c) {
+  const a = c.agent;
+  const box = $('#agent-box');
+  const create = (label) => h('button', { class: 'btn sm primary', type: 'button', onclick: guard(async () => {
+    if (a.enabled && !confirm('Tạo khoá mới? Khoá cũ sẽ ngừng hoạt động, cần cập nhật lại trong agent.')) return;
+    agentToken = (await api('POST', '/api/settings/agent-token')).token; renderAgent(c); await load();
+  }) }, label);
+  const example = `curl -X POST ${a.base}/message \\\n  -H "Authorization: Bearer ${agentToken || '<KHOÁ>'}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"text":"mai 9h họp nhóm","chatId":"<ID Zalo>"}'`;
+  box.replaceChildren(
+    h('p', { class: 'small' }, 'Cho AI agent của bạn (n8n, Make, bot tự viết…) dùng web này như một công cụ: chuyển tin nhắn về lịch sang đây và gửi lại câu trả lời; hoặc xem lịch, tạo lịch/việc trực tiếp.'),
+    agentToken
+      ? h('div', {}, h('p', { class: 'small ok' }, '✅ Khoá mới (chỉ hiện 1 lần, hãy chép ngay vào agent):'), copyBox(agentToken))
+      : h('p', { class: 'small muted' }, a.enabled ? `Đã có khoá (tạo ${fDT(a.createdAt)}). Khoá không xem lại được; quên thì tạo khoá mới.` : 'Chưa có khoá.'),
+    h('div', { class: 'row' }, create(a.enabled ? 'Tạo khoá mới' : 'Tạo khoá cho agent'),
+      a.enabled && h('button', { class: 'btn sm ghost danger', type: 'button', onclick: guard(async () => {
+        if (!confirm('Thu hồi khoá? Agent sẽ không gọi được API nữa.')) return;
+        agentToken = null; await api('DELETE', '/api/settings/agent-token'); await load();
+      }) }, 'Thu hồi')),
+    h('p', { class: 'small', style: 'margin-top:10px' }, 'Địa chỉ API:'), copyBox(a.base),
+    h('p', { class: 'small' }, 'Mô tả công cụ (OpenAPI, nạp thẳng vào agent):'), copyBox(`${a.base}/openapi.json`),
+    h('details', { class: 'small' }, h('summary', {}, 'Các API và ví dụ'),
+      h('ul', { class: 'small' },
+        h('li', {}, h('code', {}, 'POST /message'), ' {text, chatId}: xử lý tin nhắn/lệnh như bot (/homnay, /duyet all, "mai 9h họp"…), trả về {reply}'),
+        h('li', {}, h('code', {}, 'GET /agenda?date=today|tomorrow|YYYY-MM-DD'), ': lịch + việc đến hạn'),
+        h('li', {}, h('code', {}, 'POST /events'), ' {title, start, end, note}: tạo lịch (tự lên Google Lịch)'),
+        h('li', {}, h('code', {}, 'GET/POST /tasks'), ', ', h('code', {}, 'PATCH /tasks/:id'), ' {done}: việc cần làm')),
+      h('pre', { class: 'code' }, example)));
 }
 
 // Liên kết Gmail vào tài khoản + thẻ Google Lịch.

@@ -49,6 +49,16 @@ Cần một OAuth Client miễn phí của Google:
 
 Lịch kéo từ Google chỉ xem được trên web; muốn sửa, hãy sửa trên Google Lịch. Web chỉ đồng bộ từ 7 ngày trước đến 90 ngày tới.
 
+## 🤖 Dùng chung bot Zalo với AI agent khác
+Mỗi bot Zalo chỉ có **một** địa chỉ nhận tin (webhook). Nếu bot đang gắn với một AI agent khác (n8n, Make, bot tự viết…), làm như sau:
+1. Vào **Cài đặt → Bot Zalo → Ai nhận tin nhắn của bot?**, chọn **AI agent của tôi**. Web sẽ **chỉ gửi** nhắc việc và tóm tắt (gửi tin không xung đột), không giành webhook của agent.
+2. Nhập ID Zalo của bạn để nhận nhắc việc. Hoặc để agent chuyển tin `/ketnoi <mã>` kèm `chatId` sang API bên dưới.
+3. Vào **Kết nối AI agent → Tạo khoá cho agent**. Cho agent gọi API với header `Authorization: Bearer <khoá>`:
+   - `POST /api/agent/message` `{text, chatId}`: xử lý tin nhắn/lệnh y như bot, trả về `{reply}` để agent gửi lại.
+   - `GET /api/agent/agenda?date=today|tomorrow|YYYY-MM-DD`
+   - `POST /api/agent/events`, `GET/POST /api/agent/tasks`, `PATCH /api/agent/tasks/:id`
+   - Mô tả đầy đủ (OpenAPI) để nạp làm công cụ: `/api/agent/openapi.json`
+
 ## 💻 Chạy trên máy
 Cần Node.js ≥ 20.12.
 ```bash

@@ -19,9 +19,9 @@ import {
   verifyPassword, verifySession,
 } from './auth.js';
 import {
-  getMe, handleUpdate, ownerChatId, sendMessage, setWebhook, webhookSecret, zaloConfigured,
+  dayAgenda, deleteWebhook, getMe, handleText, handleUpdate, ownerChatId, sendMessage, setWebhook, webhookSecret, zaloConfigured, zaloReceiver,
 } from './zalo.js';
-import { dayKey, TZ } from './time.js';
+import { dayKey, TZ, zonedMidnight } from './time.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isVercel = Boolean(process.env.VERCEL);
@@ -61,6 +61,110 @@ app.post('/api/zalo/webhook', wrap(async (req, res) => {
   waitUntil(job);
   res.json({ ok: true });
 }));
+
+// ----- API cho AI agent khác (vd agent đang giữ bot Zalo) — xác thực bằng khoá riêng, không cần đăng nhập -----
+const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+async function agentStore(req) {
+  const store = await Store.open();
+  const hash = store.data.settings?.agentTokenHash;
+  const given = (req.get('Authorization') || '').replace(/^Bearer\s+/i, '') || req.get('X-Api-Key') || '';
+  if (!hash || !given || !safeEqual(sha256(given), hash)) throw fail(401, 'Sai hoặc thiếu khoá API (Authorization: Bearer <khoá>)');
+  return store;
+}
+function dateFromQuery(q) {
+  if (q === 'tomorrow' || q === 'mai') return new Date(Date.now() + 24 * 3600 * 1000);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(q || '')) return new Date(new Date(zonedMidnight(q)).getTime() + 12 * 3600 * 1000);
+  return new Date();
+}
+
+// Chuyển nguyên tin nhắn người dùng sang đây; nhận lại câu trả lời để agent gửi lại cho người dùng.
+// Hiểu các lệnh /homnay, /mai, /viec, /cho, /duyet, /bo, /ketnoi và nội dung tự do (AI trích lịch).
+app.post('/api/agent/message', wrap(async (req, res) => {
+  await agentStore(req);
+  const text = String(req.body?.text || '').trim();
+  if (!text) throw fail(400, 'Thiếu "text"');
+  const chatId = req.body?.chatId ? String(req.body.chatId) : null;
+  const items = !text.startsWith('/') && geminiConfigured() ? await extractItems(text) : undefined;
+  const store = await Store.open();
+  const reply = await handleText(store, chatId, text, { name: req.body?.name, items, trusted: true });
+  await store.save();
+  if (/^\/duyet/i.test(text)) kickGoogle();
+  res.json({ reply });
+}));
+app.get('/api/agent/agenda', wrap(async (req, res) => {
+  const store = await agentStore(req);
+  const date = dateFromQuery(String(req.query.date || 'today'));
+  const key = dayKey(date);
+  res.json({
+    date: key,
+    text: dayAgenda(store, date),
+    events: store.data.events.filter((e) => dayKey(e.start) === key).sort((a, b) => a.start.localeCompare(b.start))
+      .map(({ title, start, end, allDay, note, origin }) => ({ title, start, end, allDay, note, origin })),
+    dueTasks: store.data.tasks.filter((t) => !t.done && t.deadline && dayKey(t.deadline) <= key)
+      .map(({ id, title, deadline, quadrant }) => ({ id, title, deadline, quadrant })),
+    pendingSuggestions: store.data.suggestions.length,
+  });
+}));
+app.get('/api/agent/tasks', wrap(async (req, res) => {
+  const store = await agentStore(req);
+  res.json(store.data.tasks.filter((t) => !t.done).sort((a, b) => a.quadrant - b.quadrant)
+    .map(({ id, title, deadline, quadrant, note }) => ({ id, title, deadline, quadrant, note })));
+}));
+app.post('/api/agent/events', wrap(async (req, res) => {
+  await agentStore(req);
+  const e = { id: newId(), allDay: false, note: '', origin: 'agent', ...pick(req.body || {}, ['title', 'start', 'end', 'allDay', 'note']) };
+  if (!e.title || !e.start || Number.isNaN(new Date(e.start).getTime())) throw fail(400, 'Cần "title" và "start" (ISO 8601, vd 2026-10-30T14:00:00+07:00)');
+  e.start = new Date(e.start).toISOString();
+  if (e.end) e.end = new Date(e.end).toISOString();
+  await mutate((s) => s.data.events.push(e));
+  kickGoogle();
+  res.json(e);
+}));
+app.post('/api/agent/tasks', wrap(async (req, res) => {
+  await agentStore(req);
+  const t = { id: newId(), quadrant: 2, deadline: null, done: false, note: '', origin: 'agent', createdAt: new Date().toISOString(),
+    ...pick(req.body || {}, ['title', 'quadrant', 'deadline', 'note']) };
+  if (!t.title) throw fail(400, 'Cần "title"');
+  if (t.deadline) t.deadline = new Date(t.deadline).toISOString();
+  await mutate((s) => s.data.tasks.push(t));
+  res.json(t);
+}));
+app.patch('/api/agent/tasks/:id', wrap(async (req, res) => {
+  await agentStore(req);
+  res.json(await mutate((s) => {
+    const t = findOr404(s.data.tasks, req.params.id);
+    Object.assign(t, pick(req.body || {}, ['title', 'quadrant', 'deadline', 'done', 'note']));
+    if ('done' in (req.body || {})) t.doneAt = req.body.done ? new Date().toISOString() : null;
+    return t;
+  }));
+}));
+// Mô tả API (OpenAPI) để nạp vào agent làm "công cụ".
+app.get('/api/agent/openapi.json', (req, res) => {
+  const bearer = [{ bearer: [] }];
+  const body = (props, required) => ({ required: true, content: { 'application/json': { schema: { type: 'object', properties: props, required } } } });
+  res.json({
+    openapi: '3.0.3',
+    info: { title: 'Quản lý thời gian', version: '1.0.0', description: 'Lịch, việc cần làm, đề xuất từ AI của người dùng. Thời gian dạng ISO 8601, múi giờ ' + TZ },
+    servers: [{ url: `${baseUrl(req)}` }],
+    components: { securitySchemes: { bearer: { type: 'http', scheme: 'bearer' } } },
+    security: bearer,
+    paths: {
+      '/api/agent/message': { post: { operationId: 'handleScheduleMessage', summary: 'Gửi tin nhắn/lệnh của người dùng (vd "/homnay", "mai 9h họp", "/duyet all"); trả về câu trả lời để gửi lại người dùng',
+        requestBody: body({ text: { type: 'string' }, chatId: { type: 'string', description: 'ID Zalo người gửi (cần cho /ketnoi)' } }, ['text']) } },
+      '/api/agent/agenda': { get: { operationId: 'getAgenda', summary: 'Lịch và việc đến hạn của một ngày',
+        parameters: [{ name: 'date', in: 'query', schema: { type: 'string' }, description: 'today | tomorrow | YYYY-MM-DD' }] } },
+      '/api/agent/tasks': {
+        get: { operationId: 'listTasks', summary: 'Các việc chưa xong' },
+        post: { operationId: 'createTask', summary: 'Tạo việc cần làm', requestBody: body({ title: { type: 'string' }, deadline: { type: 'string', format: 'date-time' }, quadrant: { type: 'integer', enum: [1, 2, 3, 4] }, note: { type: 'string' } }, ['title']) },
+      },
+      '/api/agent/tasks/{id}': { patch: { operationId: 'updateTask', summary: 'Sửa / đánh dấu xong việc',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: body({ done: { type: 'boolean' }, title: { type: 'string' }, deadline: { type: 'string' }, quadrant: { type: 'integer' } }, []) } },
+      '/api/agent/events': { post: { operationId: 'createEvent', summary: 'Tạo lịch hẹn (tự lên Google Lịch nếu đã kết nối)',
+        requestBody: body({ title: { type: 'string' }, start: { type: 'string', format: 'date-time' }, end: { type: 'string', format: 'date-time' }, allDay: { type: 'boolean' }, note: { type: 'string' } }, ['title', 'start']) } },
+    },
+  });
+});
 
 // Cron: Vercel Cron gửi "Authorization: Bearer <CRON_SECRET>"; cron-job.org có thể dùng ?key=
 app.get('/api/cron', wrap(async (req, res) => {
@@ -283,6 +387,8 @@ app.get('/api/state', wrap(async (req, res) => {
       }])),
       zalo: zaloConfigured(),
       zaloMode: isVercel ? 'webhook' : process.env.ZALO_MODE || 'polling',
+      zaloReceiver: zaloReceiver(store),
+      agent: { enabled: Boolean(d.settings?.agentTokenHash), createdAt: d.settings?.agentTokenAt || null, base: `${base}/api/agent` },
       zaloOwner: ownerChatId(store) ? { name: d.meta.zaloName || null, fromEnv: Boolean(process.env.ZALO_CHAT_ID) } : null,
       storage: storageKind(),
       vercel: isVercel,
@@ -467,12 +573,41 @@ app.put('/api/settings/keys', wrap(async (req, res) => {
       result.zalo = { ok: true, name: me?.display_name || me?.account_name || me?.name || null };
       // Token mới → đăng ký lại webhook (chuỗi bí mật sinh từ token) khi chạy trên https.
       const base = `${req.protocol}://${req.get('host')}`;
-      if (isVercel || (process.env.ZALO_MODE === 'webhook' && base.startsWith('https://'))) {
+      if (zaloReceiver(store) === 'web' && (isVercel || (process.env.ZALO_MODE === 'webhook' && base.startsWith('https://')))) {
         try { await setWebhook(`${base}/api/zalo/webhook`); result.zalo.webhook = true; } catch (err) { result.zalo.webhookError = err.message; }
       }
     } catch (err) {
       result.zalo = { ok: false, error: err.message };
     }
+  }
+  res.json(result);
+}));
+
+// ----- Khoá cho AI agent & ai nhận tin Zalo (cần đăng nhập) -----
+// Khoá chỉ hiện đúng 1 lần lúc tạo; máy chủ chỉ lưu mã băm.
+app.post('/api/settings/agent-token', wrap(async (req, res) => {
+  const token = `qltg_${crypto.randomBytes(24).toString('hex')}`;
+  await mutate((s) => {
+    s.data.settings = { ...s.data.settings, agentTokenHash: sha256(token), agentTokenAt: new Date().toISOString() };
+  });
+  res.json({ token });
+}));
+app.delete('/api/settings/agent-token', wrap(async (req, res) => {
+  await mutate((s) => { delete s.data.settings.agentTokenHash; delete s.data.settings.agentTokenAt; });
+  res.json({ ok: true });
+}));
+app.put('/api/settings/zalo-receiver', wrap(async (req, res) => {
+  const receiver = req.body?.receiver === 'agent' ? 'agent' : 'web';
+  const chatId = req.body?.chatId != null ? String(req.body.chatId).trim() : null;
+  if (chatId && /\s/.test(chatId)) throw fail(400, 'ID Zalo không được chứa khoảng trắng');
+  await mutate((s) => {
+    s.data.settings = { ...s.data.settings, zaloReceiver: receiver };
+    if (chatId) { s.data.meta.zaloChatId = chatId; s.data.meta.zaloName = s.data.meta.zaloName || null; }
+  });
+  // Chuyển về web nhận tin: đăng ký lại webhook. Chuyển sang agent: KHÔNG đụng webhook (agent đang giữ).
+  const result = { receiver };
+  if (receiver === 'web' && zaloConfigured() && baseUrl(req).startsWith('https://')) {
+    try { await setWebhook(`${baseUrl(req)}/api/zalo/webhook`); result.webhook = true; } catch (err) { result.webhookError = err.message; }
   }
   res.json(result);
 }));

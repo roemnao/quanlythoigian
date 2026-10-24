@@ -270,3 +270,7 @@ dialog::backdrop { background: rgba(10, 12, 25, .45); }
   #task-form input[name=title] { min-width: 100%; }
   .form .two { grid-template-columns: 1fr; }
 }
+pre.code { background: var(--surface-2); border-radius: 10px; padding: 10px; font-size: .75rem; overflow-x: auto; white-space: pre; margin: 8px 0 0; }
+#zalo-box .seg, #agent-box .copy { margin-bottom: 8px; }
+#zalo-box .seg { flex-wrap: wrap; }
+.settings > .card, .settings .copy, .settings .copy input { min-width: 0; }

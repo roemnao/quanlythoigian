@@ -79,3 +79,45 @@ test('nhập khoá API trên web: chỉ người đăng nhập, không trả l�
   const st2 = await call('GET', '/api/state', null, login.cookie);
   assert.notEqual(st2.data.config.keys.ZALO_BOT_TOKEN.source, 'web');
 });
+
+test('API cho AI agent: khoá riêng, xử lý tin nhắn, xem lịch, tạo lịch/việc', async () => {
+  const login = await call('POST', '/api/login', { username: 'roemnao', password: 'moi12345' });
+  const agent = (method, url, body, token) => fetch(base + url, {
+    method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body && JSON.stringify(body),
+  }).then(async (r) => ({ status: r.status, data: await r.json().catch(() => null) }));
+
+  assert.equal((await agent('GET', '/api/agent/agenda', null, 'qltg_sai')).status, 401);
+  const { token } = (await call('POST', '/api/settings/agent-token', null, login.cookie)).data;
+  assert.match(token, /^qltg_[0-9a-f]{48}$/);
+  assert.equal((await agent('GET', '/api/agent/agenda')).status, 401);
+
+  const ev = await agent('POST', '/api/agent/events', { title: 'Họp từ agent', start: new Date().toISOString() }, token);
+  assert.equal(ev.status, 200);
+  const today = await agent('GET', '/api/agent/agenda?date=today', null, token);
+  assert.ok(today.data.events.some((e) => e.title === 'Họp từ agent'));
+  assert.match(today.data.text, /Họp từ agent/);
+
+  const msg = await agent('POST', '/api/agent/message', { text: '/homnay' }, token);
+  assert.match(msg.data.reply, /Họp từ agent/);
+  const task = await agent('POST', '/api/agent/tasks', { title: 'Gọi khách' }, token);
+  await agent('PATCH', `/api/agent/tasks/${task.data.id}`, { done: true }, token);
+  assert.ok(!(await agent('GET', '/api/agent/tasks', null, token)).data.some((t) => t.title === 'Gọi khách'));
+
+  // Ghép nối Zalo qua agent: agent chuyển "/ketnoi <mã>" kèm ID người gửi.
+  const { code } = (await call('POST', '/api/zalo/pair', null, login.cookie)).data ?? {};
+  if (code) {
+    const pair = await agent('POST', '/api/agent/message', { text: `/ketnoi ${code}`, chatId: 'zalo-user-9' }, token);
+    assert.match(pair.data.reply, /Đã kết nối/);
+  }
+  // Chế độ "agent nhận tin": lưu ID người nhận nhắc việc thủ công.
+  const rc = await call('PUT', '/api/settings/zalo-receiver', { receiver: 'agent', chatId: 'zalo-user-10' }, login.cookie);
+  assert.equal(rc.data.receiver, 'agent');
+  assert.equal((await call('GET', '/api/state', null, login.cookie)).data.config.zaloReceiver, 'agent');
+
+  const spec = await agent('GET', '/api/agent/openapi.json');
+  assert.ok(spec.data.paths['/api/agent/message']);
+  // Thu hồi khoá.
+  await call('DELETE', '/api/settings/agent-token', null, login.cookie);
+  assert.equal((await agent('GET', '/api/agent/agenda', null, token)).status, 401);
+});
