@@ -2,24 +2,28 @@
 import { nowContext, TZ } from './time.js';
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+// Model nhanh, gói miễn phí dùng được; đổi bằng biến GEMINI_MODEL.
+export const DEFAULT_MODEL = 'gemini-3.1-flash-lite';
 
+// JSON Schema chuẩn (responseJsonSchema). Mọi trường đều bắt buộc, giá trị chưa biết là null.
+const nullable = (type) => ({ type: [type, 'null'] });
 const SCHEMA = {
-  type: 'OBJECT',
+  type: 'object',
   properties: {
     items: {
-      type: 'ARRAY',
+      type: 'array',
       items: {
-        type: 'OBJECT',
+        type: 'object',
         properties: {
-          kind: { type: 'STRING', enum: ['event', 'task'] },
-          title: { type: 'STRING' },
-          start: { type: 'STRING', nullable: true },
-          end: { type: 'STRING', nullable: true },
-          deadline: { type: 'STRING', nullable: true },
-          quadrant: { type: 'INTEGER' },
-          note: { type: 'STRING', nullable: true },
+          kind: { type: 'string', enum: ['event', 'task'] },
+          title: { type: 'string' },
+          start: { ...nullable('string'), description: 'ISO 8601 có múi giờ, chỉ cho event' },
+          end: { ...nullable('string'), description: 'ISO 8601 có múi giờ' },
+          deadline: { ...nullable('string'), description: 'ISO 8601 có múi giờ, hạn chót của task' },
+          quadrant: { type: 'integer', enum: [1, 2, 3, 4] },
+          note: nullable('string'),
         },
-        required: ['kind', 'title'],
+        required: ['kind', 'title', 'start', 'end', 'deadline', 'quadrant', 'note'],
       },
     },
   },
@@ -45,14 +49,14 @@ export function geminiConfigured() {
 export async function extractItems(text, { fetchImpl = fetch } = {}) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('Chưa cấu hình GEMINI_API_KEY trong file .env');
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
   const res = await fetchImpl(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: instruction() }] },
       contents: [{ role: 'user', parts: [{ text: String(text).slice(0, 30000) }] }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: SCHEMA, temperature: 0.1 },
+      generationConfig: { responseMimeType: 'application/json', responseJsonSchema: SCHEMA, temperature: 0.1 },
     }),
   });
   if (!res.ok) {
@@ -61,7 +65,7 @@ export async function extractItems(text, { fetchImpl = fetch } = {}) {
     throw new Error(`Gemini lỗi ${res.status}: ${body.slice(0, 300)}`);
   }
   const data = await res.json();
-  const out = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+  const out = data?.candidates?.[0]?.content?.parts?.filter((p) => !p.thought).map((p) => p.text || '').join('') || '';
   return normalize(parseJson(out));
 }
 
@@ -77,7 +81,10 @@ function parseJson(s) {
 
 function validDate(v) {
   if (!v) return null;
-  const d = new Date(v);
+  // Chỉ lấy phần ngày giờ ISO ở đầu chuỗi, phòng khi model trả thêm chữ thừa.
+  const m = String(v).match(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?/);
+  if (!m) return null;
+  const d = new Date(m[0]);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 

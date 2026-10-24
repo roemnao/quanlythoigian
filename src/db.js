@@ -1,7 +1,7 @@
-// Lưu dữ liệu đơn giản bằng một file JSON (đủ cho 1 người dùng).
-import fs from 'node:fs';
-import path from 'node:path';
+// Dữ liệu của ứng dụng (1 người dùng) + các thao tác chống trùng, duyệt đề xuất.
+// Các phương thức chỉ thay đổi dữ liệu trong bộ nhớ; người gọi tự `await store.save()`.
 import crypto from 'node:crypto';
+import { loadRaw, saveRaw } from './storage.js';
 
 const EMPTY = () => ({
   events: [],      // { id, title, start, end, allDay, note, sourceId, origin }
@@ -10,7 +10,7 @@ const EMPTY = () => ({
   suggestions: [], // { id, kind, title, start, end, deadline, quadrant, note, origin, createdAt }
   sources: [],     // { id, type: 'ics'|'web', name, url, lastSync, lastError, lastHash }
   pomodoros: [],   // { at, minutes, taskId }
-  meta: { reminded: {}, lastSummaryDate: null, zaloOffset: null },
+  meta: { reminded: {}, lastSummaryDate: null, zaloChatId: null, zaloName: null, pairCode: null },
 });
 
 export function newId() {
@@ -18,21 +18,19 @@ export function newId() {
 }
 
 export class Store {
-  constructor(file) {
-    this.file = file;
-    this.data = EMPTY();
-    if (file && fs.existsSync(file)) {
-      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-      this.data = { ...EMPTY(), ...raw, meta: { ...EMPTY().meta, ...raw.meta } };
-    }
+  // persist=false: chỉ dùng trong bộ nhớ (cho kiểm thử).
+  constructor(raw = null, { persist = true } = {}) {
+    const base = EMPTY();
+    this.data = raw ? { ...base, ...raw, meta: { ...base.meta, ...raw.meta } } : base;
+    this.persist = persist;
   }
 
-  save() {
-    if (!this.file) return;
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = this.file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
-    fs.renameSync(tmp, this.file);
+  static async open() {
+    return new Store(await loadRaw());
+  }
+
+  async save() {
+    if (this.persist) await saveRaw(this.data);
   }
 
   // Khoá chống trùng: cùng loại + tiêu đề + thời điểm => coi là một.
@@ -75,7 +73,6 @@ export class Store {
       this.data.suggestions.push(s);
       added.push(s);
     }
-    if (added.length) this.save();
     return added;
   }
 
@@ -85,31 +82,32 @@ export class Store {
     const s = { ...this.data.suggestions[i], ...overrides };
     this.data.suggestions.splice(i, 1);
     let created;
-    if (s.kind === 'event') {
+    if (s.kind === 'event' && s.start) {
       created = { id: newId(), title: s.title, start: s.start, end: s.end, allDay: false, note: s.note, origin: s.origin };
       this.data.events.push(created);
-    } else {
-      created = {
-        id: newId(), title: s.title, quadrant: s.quadrant, deadline: s.deadline, done: false,
-        note: s.note, createdAt: new Date().toISOString(), origin: s.origin,
-      };
-      this.data.tasks.push(created);
+      return { kind: 'event', item: created };
     }
-    this.save();
-    return { kind: s.kind, item: created };
+    created = {
+      id: newId(), title: s.title, quadrant: s.quadrant, deadline: s.deadline, done: false,
+      note: s.note, createdAt: new Date().toISOString(), origin: s.origin,
+    };
+    this.data.tasks.push(created);
+    return { kind: 'task', item: created };
   }
 
   rejectSuggestion(id) {
     const before = this.data.suggestions.length;
     this.data.suggestions = this.data.suggestions.filter((s) => s.id !== id);
-    if (this.data.suggestions.length !== before) this.save();
     return this.data.suggestions.length !== before;
   }
 
   // Thay toàn bộ sự kiện của một nguồn lịch (ICS) bằng danh sách mới.
   replaceSourceEvents(sourceId, events) {
     this.data.events = this.data.events.filter((e) => e.sourceId !== sourceId);
-    for (const e of events) this.data.events.push({ id: newId(), ...e, sourceId, origin: 'ics' });
-    this.save();
+    for (const { uid, ...e } of events) {
+      // ID cố định theo nguồn + UID + giờ bắt đầu để đồng bộ lại không tạo mục "mới".
+      const id = crypto.createHash('sha1').update(`${sourceId}|${uid || e.title}|${e.start}`).digest('hex').slice(0, 12);
+      this.data.events.push({ id, ...e, sourceId, origin: 'ics' });
+    }
   }
 }

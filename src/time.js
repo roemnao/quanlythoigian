@@ -1,5 +1,6 @@
 // Tiện ích ngày giờ theo múi giờ cấu hình (mặc định Asia/Ho_Chi_Minh).
-export const TZ = process.env.TZ || 'Asia/Ho_Chi_Minh';
+// Không dùng biến TZ vì Vercel/AWS tự đặt TZ=:UTC cho máy chủ.
+export const TZ = process.env.APP_TIMEZONE || 'Asia/Ho_Chi_Minh';
 
 // 'YYYY-MM-DD' của một thời điểm theo múi giờ TZ.
 export function dayKey(date = new Date()) {

@@ -27,6 +27,7 @@ export function parseIcsEvents(text, now = new Date()) {
     const duration = end - start;
     const allDay = ev.datetype === 'date';
     const base = {
+      uid: ev.uid,
       title: String(ev.summary?.val ?? ev.summary ?? '(Không tên)'),
       allDay,
       note: [ev.location, ev.description].filter(Boolean).map(String).join('\n').slice(0, 1000),
@@ -66,41 +67,52 @@ export function htmlToText(html) {
     .trim();
 }
 
-export async function syncSource(store, source, { fetchImpl = fetch } = {}) {
+// Bước 1 (chậm, không đụng dữ liệu): tải nguồn, đọc ICS hoặc nhờ Gemini đọc trang web.
+export async function fetchSource(source, { fetchImpl = fetch } = {}) {
   try {
     const text = await fetchText(source.url, fetchImpl);
-    let result;
-    if (source.type === 'ics') {
-      const events = parseIcsEvents(text);
-      store.replaceSourceEvents(source.id, events);
-      result = { events: events.length };
-    } else {
-      const content = htmlToText(text);
-      const hash = crypto.createHash('sha1').update(content).digest('hex');
-      if (hash === source.lastHash) {
-        result = { unchanged: true, added: 0 };
-      } else {
-        if (!geminiConfigured()) throw new Error('Nguồn trang web cần GEMINI_API_KEY để đọc nội dung');
-        const items = await extractItems(`Nội dung trang ${source.url}:\n\n${content}`);
-        const added = store.addSuggestions(items, `web:${source.name || source.url}`);
-        source.lastHash = hash;
-        result = { added: added.length };
-      }
-    }
-    source.lastSync = new Date().toISOString();
-    source.lastError = null;
-    store.save();
-    return { ok: true, ...result };
+    if (source.type === 'ics') return { ok: true, events: parseIcsEvents(text) };
+    const content = htmlToText(text);
+    const hash = crypto.createHash('sha1').update(content).digest('hex');
+    if (hash === source.lastHash) return { ok: true, unchanged: true };
+    if (!geminiConfigured()) throw new Error('Nguồn trang web cần GEMINI_API_KEY để đọc nội dung');
+    const items = await extractItems(`Nội dung trang ${source.url}:\n\n${content}`);
+    return { ok: true, hash, items };
   } catch (err) {
-    source.lastSync = new Date().toISOString();
-    source.lastError = err.message;
-    store.save();
     return { ok: false, error: err.message };
   }
 }
 
-export async function syncAll(store, opts) {
+// Bước 2 (nhanh): ghi kết quả vào store. Trả về tóm tắt cho giao diện.
+export function applySource(store, sourceId, fetched) {
+  const source = store.data.sources.find((s) => s.id === sourceId);
+  if (!source) return { ok: false, error: 'Nguồn đã bị xoá' };
+  source.lastSync = new Date().toISOString();
+  source.lastError = fetched.ok ? null : fetched.error;
+  if (!fetched.ok) return fetched;
+  if (fetched.events) {
+    store.replaceSourceEvents(source.id, fetched.events);
+    return { ok: true, events: fetched.events.length };
+  }
+  if (fetched.unchanged) return { ok: true, unchanged: true, added: 0 };
+  source.lastHash = fetched.hash;
+  const added = store.addSuggestions(fetched.items, `web:${source.name || source.url}`);
+  return { ok: true, added: added.length };
+}
+
+// Đồng bộ từng nguồn: tải xong mới mở dữ liệu mới nhất để ghi, tránh đè thay đổi khác.
+// olderThanMs: chỉ đồng bộ nguồn đã lâu chưa cập nhật (dùng cho cron). ids: chỉ các nguồn này.
+export async function syncSources(openStore, { olderThanMs = 0, ids = null, ...opts } = {}) {
+  const snapshot = await openStore();
+  const now = Date.now();
   const results = {};
-  for (const s of store.data.sources) results[s.id] = await syncSource(store, s, opts);
+  for (const s of snapshot.data.sources) {
+    if (ids && !ids.includes(s.id)) continue;
+    if (olderThanMs && s.lastSync && now - new Date(s.lastSync).getTime() < olderThanMs) continue;
+    const fetched = await fetchSource(s, opts);
+    const store = await openStore();
+    results[s.id] = applySource(store, s.id, fetched);
+    await store.save();
+  }
   return results;
 }

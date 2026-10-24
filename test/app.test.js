@@ -4,10 +4,10 @@ import { Store } from '../src/db.js';
 import { normalize, extractItems } from '../src/gemini.js';
 import { parseIcsEvents, htmlToText } from '../src/sources.js';
 import { handleText } from '../src/zalo.js';
-import { dueReminders } from '../src/scheduler.js';
+import { dueReminders } from '../src/cron.js';
 
 test('đề xuất trùng bị bỏ qua, duyệt chuyển thành lịch/việc', () => {
-  const s = new Store(null);
+  const s = new Store(null, { persist: false });
   const a = s.addSuggestions([
     { kind: 'event', title: 'Họp nhóm', start: '2026-10-30T07:00:00.000Z' },
     { kind: 'event', title: ' họp  NHÓM ', start: '2026-10-30T07:00:00.000Z' },
@@ -64,14 +64,37 @@ END:VCALENDAR`;
   assert.equal(ev.filter((e) => e.title === 'Toán').length, 3);
   assert.equal(ev.find((e) => e.title === 'Gặp khách').note, 'Quận 1');
   assert.equal(ev[1].start, '2026-10-27T08:00:00.000Z');
+  // Đồng bộ lại cho cùng ID → không bị nhắc lại hay nhân đôi.
+  const s = new Store(null, { persist: false });
+  s.replaceSourceEvents('src1', ev);
+  const ids = s.data.events.map((e) => e.id);
+  s.replaceSourceEvents('src1', parseIcsEvents(ics, new Date('2026-10-24T00:00:00Z')));
+  assert.deepEqual(s.data.events.map((e) => e.id), ids);
+  assert.equal(new Set(ids).size, 4);
 });
 
 test('htmlToText bỏ thẻ và script', () => {
   assert.equal(htmlToText('<p>Họp&nbsp;lúc 9h</p><script>x()</script><b>T5</b>'), 'Họp lúc 9h\n T5');
 });
 
+test('bot Zalo: ghép nối bằng mã, người lạ bị chặn', async () => {
+  const s = new Store(null, { persist: false });
+  assert.match(await handleText(s, 'abc', '/homnay'), /bot riêng/);
+  s.data.meta.pairCode = '123456';
+  s.data.meta.pairExpires = new Date(Date.now() + 60000).toISOString();
+  assert.match(await handleText(s, 'abc', '/ketnoi 000000'), /không đúng/);
+  assert.match(await handleText(s, 'abc', '/ketnoi 123456'), /Đã kết nối/);
+  assert.equal(s.data.meta.zaloChatId, 'abc');
+  assert.equal(s.data.meta.pairCode, null);
+  assert.match(await handleText(s, 'xyz', '/viec'), /bot riêng/);
+  s.data.meta.pairCode = '222222';
+  s.data.meta.pairExpires = new Date(Date.now() - 1000).toISOString();
+  assert.match(await handleText(s, 'xyz', '/ketnoi 222222'), /hết hạn/);
+});
+
 test('bot Zalo: lệnh /id, /cho, /duyet', async () => {
-  const s = new Store(null);
+  const s = new Store(null, { persist: false });
+  s.data.meta.zaloChatId = 'abc';
   assert.match(await handleText(s, 'abc', '/id'), /abc/);
   s.addSuggestions([{ kind: 'task', title: 'Gọi điện' }], 'zalo');
   assert.match(await handleText(s, 'abc', '/cho'), /1\. ✅ Gọi điện/);
@@ -81,7 +104,7 @@ test('bot Zalo: lệnh /id, /cho, /duyet', async () => {
 });
 
 test('nhắc việc chỉ gửi một lần trong khoảng trước sự kiện', () => {
-  const s = new Store(null);
+  const s = new Store(null, { persist: false });
   const now = new Date('2026-10-24T08:00:00Z');
   s.data.events.push({ id: 'e1', title: 'Họp', start: '2026-10-24T08:10:00Z' },
     { id: 'e2', title: 'Xa', start: '2026-10-24T10:00:00Z' });
