@@ -10,6 +10,7 @@ const EMPTY = () => ({
   suggestions: [], // { id, kind, title, start, end, deadline, quadrant, note, origin, createdAt }
   sources: [],     // { id, type: 'ics'|'web', name, url, lastSync, lastError, lastHash }
   pomodoros: [],   // { at, minutes, taskId }
+  auth: null,      // { admin: { username, salt, hash }, secret } — tài khoản quản trị (mật khẩu đã băm)
   meta: { reminded: {}, lastSummaryDate: null, zaloChatId: null, zaloName: null, pairCode: null },
 });
 

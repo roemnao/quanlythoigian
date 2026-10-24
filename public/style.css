@@ -204,7 +204,8 @@ details[open] summary { margin-bottom: 8px; }
 .steps { padding-left: 20px; margin: 8px 0; } .steps li { margin-bottom: 8px; }
 .copy { display: flex; gap: 6px; } .copy input { flex: 1; font-size: .8rem; font-family: ui-monospace, monospace; }
 .code-big { font-size: 1.8rem; font-weight: 700; letter-spacing: .2em; font-variant-numeric: tabular-nums; text-align: center; background: var(--primary-soft); color: var(--primary); border-radius: 12px; padding: 10px; margin: 8px 0; }
-#logout { margin-top: 16px; }
+#account-card { margin-top: 16px; }
+#password-form input { min-width: 160px; }
 
 /* ---------- Đăng nhập ---------- */
 .screen { min-height: 100vh; display: grid; place-items: center; padding: 16px; }

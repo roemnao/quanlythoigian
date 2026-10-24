@@ -12,7 +12,7 @@ Web quản lý thời gian cá nhân. Web **tự lấy lịch từ các nguồn 
   - Trang web: AI chỉ đọc lại khi nội dung thay đổi.
 - **Bot Zalo:** gửi nội dung để tạo lịch; lệnh `/homnay`, `/mai`, `/viec`, `/cho`, `/duyet`. Bot nhắc trước mỗi lịch hẹn và gửi tóm tắt lúc 7h sáng. Bot **chỉ phục vụ tài khoản đã ghép nối** bằng mã lấy trên web.
 - **Đưa lịch lên điện thoại:** có link `.ics` riêng, có khoá bí mật, để đăng ký vào Google Calendar hoặc iPhone.
-- Có màn hình đăng nhập bằng mật khẩu, giao diện tối và sáng, dùng tốt trên điện thoại.
+- **Tài khoản quản trị** tạo ngay trên web ở lần mở đầu tiên (mật khẩu được băm, không nằm trong code). Có đổi mật khẩu, giao diện tối và sáng, dùng tốt trên điện thoại.
 
 ## 🚀 Đưa lên Vercel
 1. **Tạo project:** vào https://vercel.com/new, đăng nhập bằng GitHub, chọn repo `quanlythoigian` rồi bấm **Import**. Không cần đổi cài đặt build.
@@ -20,18 +20,18 @@ Web quản lý thời gian cá nhân. Web **tự lấy lịch từ các nguồn 
 
    | Tên | Giá trị |
    |---|---|
-   | `APP_PASSWORD` | mật khẩu bạn tự đặt để vào web |
    | `GEMINI_API_KEY` | key Gemini (https://aistudio.google.com/apikey) |
    | `ZALO_BOT_TOKEN` | token bot Zalo |
 
    Bấm **Deploy**.
 3. **Thêm nơi lưu dữ liệu (miễn phí):** trong project, vào tab **Storage**, chọn **Create Database**, chọn **Upstash for Redis** (gói Free), rồi **Connect** vào project. Sau đó vào tab **Deployments**, bấm **⋯** ở bản mới nhất và chọn **Redeploy**.
-   > Nếu bỏ qua bước này, web vẫn chạy nhưng dữ liệu sẽ mất mỗi khi Vercel khởi động lại.
-4. **Kết nối Zalo:** mở web và đăng nhập, vào **Cài đặt**:
+   > Web sẽ không cho tạo tài khoản khi chưa có bước này, vì nếu không có nơi lưu, tài khoản và dữ liệu sẽ mất mỗi khi Vercel khởi động lại.
+4. **Tạo tài khoản quản trị:** mở web, nhập tên đăng nhập và mật khẩu ở màn hình **Chào mừng**. Người tạo đầu tiên là chủ web, nên hãy làm ngay sau khi deploy. Muốn đổi mật khẩu sau này: vào **Cài đặt**, mục **Tài khoản**.
+5. **Kết nối Zalo:** vào **Cài đặt**:
    - Bấm **Kết nối webhook** (chỉ cần làm 1 lần).
    - Bấm **Lấy mã ghép nối**, mở Zalo rồi nhắn cho bot `/ketnoi <mã>`.
    - Bấm **Gửi tin thử** để kiểm tra.
-5. **Nhắc trước giờ hẹn (tuỳ chọn):** gói miễn phí của Vercel chỉ chạy cron **1 lần/ngày** (7h sáng: đồng bộ nguồn và gửi tóm tắt). Muốn được nhắc 15 phút trước mỗi lịch, tạo tác vụ miễn phí tại https://cron-job.org gọi địa chỉ `https://<tên-web>.vercel.app/api/cron` **mỗi 5 phút**. Địa chỉ này có sẵn trong mục Cài đặt để sao chép.
+6. **Nhắc trước giờ hẹn (tuỳ chọn):** gói miễn phí của Vercel chỉ chạy cron **1 lần/ngày** (7h sáng: đồng bộ nguồn và gửi tóm tắt). Muốn được nhắc 15 phút trước mỗi lịch, tạo tác vụ miễn phí tại https://cron-job.org gọi địa chỉ `https://<tên-web>.vercel.app/api/cron` **mỗi 5 phút**. Địa chỉ này có sẵn trong mục Cài đặt để sao chép.
 
 Từ đó, mỗi lần có code mới đẩy lên nhánh chính của repo, Vercel sẽ tự deploy lại.
 
@@ -39,7 +39,7 @@ Từ đó, mỗi lần có code mới đẩy lên nhánh chính của repo, Verc
 Cần Node.js ≥ 20.12.
 ```bash
 npm install
-cp .env.example .env     # điền GEMINI_API_KEY, ZALO_BOT_TOKEN (APP_PASSWORD tuỳ chọn)
+cp .env.example .env     # điền GEMINI_API_KEY, ZALO_BOT_TOKEN
 npm start                # mở http://localhost:3000
 ```
 Trên máy, dữ liệu lưu ở `data/db.json`. Bot Zalo chạy ở chế độ `polling`, nên không cần tên miền. Hệ thống tự kiểm tra mỗi phút để đồng bộ và nhắc việc.
@@ -49,6 +49,8 @@ Trên máy, dữ liệu lưu ở `data/db.json`. Bot Zalo chạy ở chế độ
 ## Biến môi trường khác
 | Biến | Ý nghĩa | Mặc định |
 |---|---|---|
+| `APP_PASSWORD` | Đăng nhập bằng mật khẩu đặt sẵn, thay cho tài khoản tạo trên web | trống |
+| `ADMIN_USERNAME` | Tên đăng nhập đi kèm `APP_PASSWORD` | trống |
 | `GEMINI_MODEL` | Model Gemini | `gemini-3.1-flash-lite` |
 | `APP_TIMEZONE` | Múi giờ | `Asia/Ho_Chi_Minh` |
 | `CRON_SECRET` | Bảo vệ `/api/cron` (cron-job.org gọi `/api/cron?key=...`) | trống |
@@ -64,6 +66,7 @@ api/index.js       điểm vào trên Vercel
 server.js          chạy trên máy (polling Zalo + cron mỗi phút)
 vercel.json        cấu hình Vercel (rewrite, cron hằng ngày)
 src/app.js         API Express + đăng nhập
+src/auth.js        tài khoản quản trị (băm mật khẩu scrypt, phiên đăng nhập)
 src/storage.js     lưu dữ liệu: Upstash Redis hoặc file JSON
 src/db.js          dữ liệu, chống trùng, hàng chờ đề xuất
 src/gemini.js      gọi Gemini để trích lịch từ văn bản

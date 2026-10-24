@@ -11,6 +11,10 @@ import { syncSources } from './sources.js';
 import { runCron } from './cron.js';
 import { storageKind } from './storage.js';
 import {
+  adminName, authMode, calendarKey, changePassword, checkLogin, createAdmin, sessionCookieValue, validateNew,
+  verifyPassword, verifySession,
+} from './auth.js';
+import {
   getMe, handleUpdate, ownerChatId, sendMessage, setWebhook, webhookSecret, zaloConfigured,
 } from './zalo.js';
 import { dayKey, TZ } from './time.js';
@@ -25,11 +29,8 @@ const safeEqual = (a, b) => {
   const x = Buffer.from(String(a)); const y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
-const hmac = (purpose) => crypto.createHmac('sha256', process.env.APP_PASSWORD || '').update(purpose).digest('hex');
-const sessionToken = () => hmac('session-v1');
-const calendarKey = () => hmac('calendar-v1').slice(0, 32);
 
-const wrap = (fn) => (req, res) => Promise.resolve(fn(req, res)).catch((err) => {
+const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch((err) => {
   res.status(err.status || 500).json({ error: err.message });
 });
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -68,8 +69,9 @@ app.get('/api/cron', wrap(async (req, res) => {
 
 // Đăng ký lịch từ ứng dụng lịch (Google Calendar, iPhone...) bằng khoá trong URL.
 app.get('/calendar.ics', wrap(async (req, res) => {
-  if (process.env.APP_PASSWORD && !safeEqual(req.query.key || '', calendarKey())) throw fail(401, 'Sai khoá lịch');
   const store = await Store.open();
+  const key = calendarKey(store);
+  if (key && !safeEqual(req.query.key || '', key)) throw fail(401, 'Sai khoá lịch');
   const esc = (s) => String(s || '').replace(/([\\;,])/g, '\\$1').replace(/\r?\n/g, '\\n');
   const fmt = (d) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//quanlythoigian//VI', 'X-WR-CALNAME:Quản lý thời gian'];
@@ -89,33 +91,85 @@ function readCookie(req, name) {
   const m = (req.get('Cookie') || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
   return m ? decodeURIComponent(m[1]) : '';
 }
-app.post('/api/login', wrap(async (req, res) => {
-  const pw = process.env.APP_PASSWORD;
-  if (!pw) return res.json({ ok: true });
-  if (!safeEqual(String(req.body.password || ''), pw)) {
-    await new Promise((r) => setTimeout(r, 800)); // làm chậm đoán mật khẩu
-    throw fail(401, 'Sai mật khẩu');
-  }
-  res.cookie(COOKIE, sessionToken(), {
+function setSession(req, res, store, username) {
+  res.cookie(COOKIE, sessionCookieValue(store, username), {
     httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 30 * 24 * 3600 * 1000, path: '/',
   });
-  res.json({ ok: true });
+}
+const slowDown = () => new Promise((r) => setTimeout(r, 800)); // làm chậm việc đoán mật khẩu
+
+// Cho giao diện biết cần hiện màn hình nào: đăng nhập, tạo tài khoản, hay cần kết nối lưu trữ.
+function setupState(store) {
+  const mode = authMode(store);
+  return {
+    mode,
+    // Trên Vercel phải có Upstash Redis trước, nếu không tài khoản sẽ mất khi máy chủ khởi động lại.
+    needsStorage: mode === 'none' && isVercel && storageKind() === 'tmp',
+    needsAdmin: mode === 'none',
+    usernameRequired: mode === 'db' || (mode === 'env' && Boolean(process.env.ADMIN_USERNAME)),
+  };
+}
+app.get('/api/auth/status', wrap(async (req, res) => {
+  const store = await Store.open();
+  res.json({ ...setupState(store), loggedIn: verifySession(store, readCookie(req, COOKIE)) });
+}));
+
+// Tạo tài khoản quản trị lần đầu (chỉ khi chưa có tài khoản nào).
+app.post('/api/setup', wrap(async (req, res) => {
+  const { username, password } = req.body || {};
+  const problem = validateNew(username, password);
+  if (problem) throw fail(400, problem);
+  const store = await Store.open();
+  const st = setupState(store);
+  if (!st.needsAdmin) throw fail(409, 'Đã có tài khoản quản trị. Hãy đăng nhập.');
+  if (st.needsStorage) throw fail(409, 'Cần kết nối Upstash Redis trước khi tạo tài khoản');
+  const user = await createAdmin(store, username, password);
+  await store.save();
+  setSession(req, res, store, user);
+  res.json({ ok: true, username: user });
+}));
+
+app.post('/api/login', wrap(async (req, res) => {
+  const store = await Store.open();
+  if (authMode(store) === 'none') throw fail(409, 'Chưa có tài khoản quản trị');
+  const user = await checkLogin(store, req.body?.username, req.body?.password);
+  if (!user) {
+    await slowDown();
+    throw fail(401, setupState(store).usernameRequired ? 'Sai tên đăng nhập hoặc mật khẩu' : 'Sai mật khẩu');
+  }
+  setSession(req, res, store, user);
+  res.json({ ok: true, username: user });
 }));
 app.post('/api/logout', (req, res) => {
   res.clearCookie(COOKIE, { path: '/' });
   res.json({ ok: true });
 });
 
-app.use('/api', (req, res, next) => {
-  const pw = process.env.APP_PASSWORD;
-  if (!pw) {
-    // Trên mạng công khai (Vercel) bắt buộc có mật khẩu, nếu không ai cũng xem được lịch của bạn.
-    if (isVercel) return res.status(503).json({ error: 'Chưa đặt APP_PASSWORD trong Vercel → Settings → Environment Variables', setup: true });
-    return next();
+app.use('/api', wrap(async (req, res, next) => {
+  const store = await Store.open();
+  const st = setupState(store);
+  if (st.needsAdmin) {
+    // Trên máy cá nhân cho dùng luôn; trên mạng công khai (Vercel) bắt buộc tạo tài khoản trước.
+    if (!isVercel) return next();
+    return res.status(503).json({ error: 'Cần tạo tài khoản quản trị', setup: true, ...st });
   }
-  if (safeEqual(readCookie(req, COOKIE), sessionToken())) return next();
-  res.status(401).json({ error: 'Cần đăng nhập', login: true });
-});
+  if (verifySession(store, readCookie(req, COOKIE))) return next();
+  res.status(401).json({ error: 'Cần đăng nhập', login: true, usernameRequired: st.usernameRequired });
+}));
+
+// Đổi mật khẩu (tài khoản tạo trên web).
+app.post('/api/account/password', wrap(async (req, res) => {
+  const { current, next: newPassword } = req.body || {};
+  const store = await Store.open();
+  if (authMode(store) !== 'db') throw fail(400, 'Mật khẩu đang đặt bằng APP_PASSWORD trong cấu hình máy chủ');
+  if (!(await verifyPassword(current, store.data.auth.admin))) { await slowDown(); throw fail(401, 'Mật khẩu hiện tại không đúng'); }
+  const problem = validateNew(store.data.auth.admin.username, newPassword);
+  if (problem) throw fail(400, problem);
+  await changePassword(store, newPassword);
+  await store.save();
+  setSession(req, res, store, store.data.auth.admin.username); // phiên cũ ở máy khác hết hiệu lực
+  res.json({ ok: true });
+}));
 
 // ----- Trạng thái tổng -----
 app.get('/api/state', wrap(async (req, res) => {
@@ -134,8 +188,8 @@ app.get('/api/state', wrap(async (req, res) => {
       zaloOwner: ownerChatId(store) ? { name: d.meta.zaloName || null, fromEnv: Boolean(process.env.ZALO_CHAT_ID) } : null,
       storage: storageKind(),
       vercel: isVercel,
-      auth: Boolean(process.env.APP_PASSWORD),
-      calendarUrl: `${base}/calendar.ics${process.env.APP_PASSWORD ? `?key=${calendarKey()}` : ''}`,
+      auth: { mode: authMode(store), username: adminName(store) },
+      calendarUrl: `${base}/calendar.ics${calendarKey(store) ? `?key=${calendarKey(store)}` : ''}`,
       cronUrl: `${base}/api/cron${process.env.CRON_SECRET ? '?key=<CRON_SECRET>' : ''}`,
     },
   });

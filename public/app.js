@@ -29,8 +29,8 @@ class ApiError extends Error {}
 async function api(method, url, body) {
   const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && data.login) { showScreen('login'); throw new ApiError('Cần đăng nhập'); }
-  if (res.status === 503 && data.setup) { showScreen('setup'); $('#setup-msg').textContent = data.error; throw new ApiError(data.error); }
+  if (res.status === 401 && data.login) { showLogin(data.usernameRequired); throw new ApiError('Cần đăng nhập'); }
+  if (res.status === 503 && data.setup) { showScreen(data.needsStorage ? 'setup-storage' : 'setup-admin'); throw new ApiError(data.error); }
   if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
   return data;
 }
@@ -65,11 +65,16 @@ const dueOn = (k) => S.tasks.filter((t) => !t.done && t.deadline && dkey(t.deadl
 const timeRange = (e) => (e.allDay ? 'Cả ngày' : e.end ? `${fTime(e.start)} – ${fTime(e.end)}` : fTime(e.start));
 
 // ---------- Màn hình & điều hướng ----------
+const SCREENS = ['login', 'setup-admin', 'setup-storage', 'app'];
 function showScreen(name) {
-  $('#login').hidden = name !== 'login';
-  $('#setup').hidden = name !== 'setup';
-  $('#app').hidden = name !== 'app';
-  if (name === 'login') setTimeout(() => $('#login-form').password.focus(), 50);
+  for (const s of SCREENS) $(`#${s}`).hidden = s !== name;
+  const first = $(`#${name} input`);
+  if (first) setTimeout(() => first.focus(), 50);
+}
+function showLogin(usernameRequired = true) {
+  const u = $('#login-form').username;
+  u.hidden = !usernameRequired; u.required = usernameRequired;
+  showScreen('login');
 }
 
 const VIEWS = {
@@ -514,7 +519,7 @@ function renderSettings() {
     statusRow(c.storage !== 'tmp', `Lưu trữ: ${storageText[0]}`, storageText[1]),
     statusRow(c.zalo, 'Zalo Bot', c.zalo ? `Chế độ ${c.zaloMode === 'webhook' ? 'webhook' : 'polling (trên máy)'}` : 'Thiếu ZALO_BOT_TOKEN'),
     statusRow(Boolean(c.zaloOwner), 'Nhận nhắc việc qua Zalo', c.zaloOwner ? `Đã kết nối${c.zaloOwner.name ? ` với ${c.zaloOwner.name}` : ''}` : 'Chưa ghép nối'),
-    statusRow(c.auth, 'Mật khẩu bảo vệ', c.auth ? 'Đang bật' : 'Chưa đặt APP_PASSWORD'));
+    statusRow(c.auth.mode !== 'none', 'Bảo vệ bằng mật khẩu', c.auth.mode === 'none' ? 'Chưa có tài khoản' : c.auth.username ? `Tài khoản ${c.auth.username}` : 'Đặt bằng APP_PASSWORD'));
 
   $('#side-status').replaceChildren(
     h('span', {}, h('i', { class: `dot ${c.gemini ? 'on' : 'off'}` }), 'Gemini'),
@@ -570,23 +575,44 @@ function renderSettings() {
     }) }, icon('refresh'), 'Chạy ngay')));
 
   $('#cal-url').value = c.calendarUrl;
-  $('#logout').hidden = !c.auth;
+  $('#account-card').hidden = c.auth.mode === 'none';
+  $('#account-name').textContent = c.auth.username || 'quản trị';
+  $('#password-form').hidden = c.auth.mode !== 'db';
 }
-$('#logout').onclick = guard(async () => { await api('POST', '/api/logout'); showScreen('login'); });
+$('#logout').onclick = guard(async () => { await api('POST', '/api/logout'); showLogin(Boolean(S?.config.auth.username)); });
+$('#password-form').addEventListener('submit', guard(async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  await api('POST', '/api/account/password', { current: f.current.value, next: f.next.value });
+  f.reset(); toast('Đã đổi mật khẩu');
+}));
 
-// ---------- Đăng nhập ----------
+// ---------- Đăng nhập & tạo tài khoản ----------
+async function postForm(url, body, errEl, btn) {
+  errEl.hidden = true; btn.disabled = true;
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Có lỗi xảy ra');
+    return data;
+  } catch (e) {
+    errEl.textContent = e.message; errEl.hidden = false; return null;
+  } finally { btn.disabled = false; }
+}
 $('#login-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  const err = $('#login-error'); err.hidden = true;
-  const btn = ev.target.querySelector('button'); btn.disabled = true;
-  try {
-    const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: ev.target.password.value }) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Đăng nhập lỗi');
-    ev.target.reset();
-    await guard(load)();
-  } catch (e) { err.textContent = e.message; err.hidden = false; } finally { btn.disabled = false; }
+  const f = ev.target;
+  const ok = await postForm('/api/login', { username: f.username.value, password: f.password.value }, $('#login-error'), f.querySelector('button'));
+  if (ok) { f.reset(); await guard(load)(); }
 });
+$('#setup-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const f = ev.target; const err = $('#setup-error');
+  if (f.password.value !== f.confirm.value) { err.textContent = 'Hai mật khẩu không khớp'; err.hidden = false; return; }
+  const ok = await postForm('/api/setup', { username: f.username.value, password: f.password.value }, err, f.querySelector('button'));
+  if (ok) { f.reset(); toast(`Đã tạo tài khoản ${ok.username}`); await guard(load)(); }
+});
+$('#setup-retry').onclick = () => location.reload();
 
 // ---------- Pomodoro ----------
 const RING = 2 * Math.PI * 52;

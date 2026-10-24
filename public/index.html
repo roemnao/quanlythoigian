@@ -37,24 +37,39 @@
   <div id="login" class="screen" hidden>
     <form id="login-form" class="login-card">
       <div class="brand big"><span class="logo">⏳</span> Quản lý thời gian</div>
-      <p class="muted">Nhập mật khẩu để tiếp tục</p>
-      <input name="password" type="password" placeholder="Mật khẩu" autocomplete="current-password" required autofocus>
+      <p class="muted">Đăng nhập để tiếp tục</p>
+      <input name="username" placeholder="Tên đăng nhập" autocomplete="username" autocapitalize="none" spellcheck="false">
+      <input name="password" type="password" placeholder="Mật khẩu" autocomplete="current-password" required>
       <button class="btn primary block">Đăng nhập</button>
       <p id="login-error" class="err small" hidden></p>
     </form>
   </div>
 
-  <!-- Cần cấu hình -->
-  <div id="setup" class="screen" hidden>
+  <!-- Tạo tài khoản quản trị lần đầu -->
+  <div id="setup-admin" class="screen" hidden>
+    <form id="setup-form" class="login-card">
+      <div class="brand big"><span class="logo">⏳</span> Chào mừng!</div>
+      <p class="muted">Tạo tài khoản quản trị để bảo vệ lịch của bạn. Chỉ tạo được <b>một lần</b>, người tạo đầu tiên là chủ web.</p>
+      <input name="username" placeholder="Tên đăng nhập (vd: roemnao)" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      <input name="password" type="password" placeholder="Mật khẩu (ít nhất 4 ký tự)" autocomplete="new-password" required minlength="4">
+      <input name="confirm" type="password" placeholder="Nhập lại mật khẩu" autocomplete="new-password" required>
+      <button class="btn primary block">Tạo tài khoản</button>
+      <p id="setup-error" class="err small" hidden></p>
+    </form>
+  </div>
+
+  <!-- Cần kết nối nơi lưu dữ liệu (Vercel) -->
+  <div id="setup-storage" class="screen" hidden>
     <div class="login-card">
-      <div class="brand big"><span class="logo">⏳</span> Gần xong rồi!</div>
-      <p>Web đang chạy trên mạng công khai nên cần mật khẩu để bảo vệ lịch của bạn.</p>
+      <div class="brand big"><span class="logo">⏳</span> Còn 1 bước nữa!</div>
+      <p>Hãy kết nối cơ sở dữ liệu miễn phí để lưu tài khoản và lịch của bạn:</p>
       <ol class="steps">
-        <li>Vào <b>Vercel → Project → Settings → Environment Variables</b></li>
-        <li>Thêm biến <code>APP_PASSWORD</code> = mật khẩu bạn muốn dùng</li>
-        <li>Vào tab <b>Deployments</b> → nút <b>⋯</b> → <b>Redeploy</b></li>
+        <li>Vào <b>Vercel</b>, mở project này, chọn tab <b>Storage</b></li>
+        <li>Bấm <b>Create Database</b> → <b>Upstash for Redis</b> → gói <b>Free</b> → <b>Connect</b></li>
+        <li>Vào tab <b>Deployments</b> → nút <b>⋯</b> ở bản mới nhất → <b>Redeploy</b></li>
+        <li>Mở lại trang này để tạo tài khoản</li>
       </ol>
-      <p id="setup-msg" class="muted small"></p>
+      <button id="setup-retry" class="btn block">Tôi đã làm xong, kiểm tra lại</button>
     </div>
   </div>
 
@@ -239,7 +254,15 @@
             <div class="copy"><input id="cal-url" readonly><button class="btn icon" data-copy="#cal-url" aria-label="Sao chép"><svg class="i"><use href="#i-copy"/></svg></button></div>
           </div>
         </div>
-        <button id="logout" class="btn ghost" hidden><svg class="i"><use href="#i-logout"/></svg>Đăng xuất</button>
+        <div class="card" id="account-card" hidden>
+          <div class="card-head"><h2>Tài khoản</h2><button id="logout" class="btn sm ghost"><svg class="i"><use href="#i-logout"/></svg>Đăng xuất</button></div>
+          <p class="small">Đăng nhập với: <b id="account-name"></b></p>
+          <form id="password-form" class="row">
+            <input name="current" type="password" placeholder="Mật khẩu hiện tại" autocomplete="current-password" required class="grow">
+            <input name="next" type="password" placeholder="Mật khẩu mới" autocomplete="new-password" required minlength="4" class="grow">
+            <button class="btn">Đổi mật khẩu</button>
+          </form>
+        </div>
       </section>
     </main>
   </div>
