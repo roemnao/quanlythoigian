@@ -4,10 +4,17 @@ import path from 'node:path';
 
 const KEY = process.env.STORAGE_KEY || 'quanlythoigian:db';
 
+// Tìm cặp biến REST của Upstash, kể cả khi Vercel thêm tiền tố tuỳ chọn (vd STORAGE_KV_REST_API_URL).
+function findEnv(suffixes) {
+  for (const name of Object.keys(process.env)) {
+    if (suffixes.some((s) => name === s || name.endsWith(`_${s}`)) && process.env[name]) return process.env[name];
+  }
+  return null;
+}
+
 function redisConfig() {
-  // Tích hợp Upstash trên Vercel có thể đặt tên biến theo 2 kiểu.
-  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  const url = findEnv(['UPSTASH_REDIS_REST_URL', 'KV_REST_API_URL']);
+  const token = findEnv(['UPSTASH_REDIS_REST_TOKEN', 'KV_REST_API_TOKEN']);
   return url && token ? { url: url.replace(/\/$/, ''), token } : null;
 }
 
