@@ -28,8 +28,8 @@ export const CONFIG_SCHEMA = [
   { group: 'Bộ lọc tin nhóm', key: 'BOT_TRIGGERS', type: 'csv', label: 'Lệnh gọi bot (vd /bot)', placeholder: '/bot', live: true },
   { group: 'Bộ lọc tin nhóm', key: 'MEMORYDATA_KEEP', type: 'int', min: 100, max: 1000000, label: 'Số tin giữ trong memorydata mỗi hội thoại', placeholder: '5000', live: true },
 
-  { group: 'Giới hạn', key: 'USER_RATE_PER_MIN', type: 'int', min: 0, max: 1000, label: 'Mỗi người tối đa (tin/phút, 0 = không giới hạn)', placeholder: '6', live: false },
-  { group: 'Giới hạn', key: 'CHAT_RATE_PER_MIN', type: 'int', min: 0, max: 1000, label: 'Mỗi nhóm tối đa (tin/phút, 0 = không giới hạn)', placeholder: '20', live: false },
+  { group: 'Giới hạn', key: 'USER_RATE_PER_MIN', type: 'int', min: 0, max: 1000, label: 'Mỗi người tối đa (tin/phút, 0 = không giới hạn)', placeholder: '6', live: true },
+  { group: 'Giới hạn', key: 'CHAT_RATE_PER_MIN', type: 'int', min: 0, max: 1000, label: 'Mỗi nhóm tối đa (tin/phút, 0 = không giới hạn)', placeholder: '20', live: true },
   { group: 'Giới hạn', key: 'DAILY_TOKEN_BUDGET', type: 'int', min: 0, max: 1e9, label: 'Ngân sách token mỗi ngày (0 = không giới hạn)', placeholder: '200000', live: true },
 
   { group: 'Quyền', key: 'ALLOW_ALL_CHATS', type: 'bool', label: 'Trả lời mọi nhóm / người (tắt = chỉ danh sách cho phép)', placeholder: 'false', live: true },
@@ -153,9 +153,25 @@ export async function addSessionEvents(events, retentionDays) {
     const key = K.session(chatId, dayKey(at));
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(ev);
-    chats.set(chatId, { name: raw.chatName ? String(raw.chatName).slice(0, 100) : chats.get(chatId)?.name || null, group: Boolean(raw.isGroup), lastAt: at });
+    const prev = chats.get(chatId);
+    chats.set(chatId, {
+      name: raw.chatName ? String(raw.chatName).slice(0, 100) : prev?.name || null,
+      group: raw.isGroup != null ? Boolean(raw.isGroup) : prev?.group ?? null,
+      lastAt: at,
+    });
   }
   if (!groups.size) return { saved: 0 };
+  // Lô không kèm tên nhóm (chỉ có bước bộ lọc, agent…): giữ tên đã lưu thay vì ghi đè bằng rỗng.
+  const unnamed = [...chats].filter(([, info]) => !info.name || info.group == null).map(([id]) => id);
+  if (unnamed.length) {
+    const hb = batch();
+    for (const id of unnamed) hb.hget(K.chats, id);
+    (await hb.exec()).forEach((old, i) => {
+      const info = chats.get(unnamed[i]);
+      info.name ||= old?.name || null;
+      info.group ??= old?.group ?? false;
+    });
+  }
   const b = batch();
   const ttl = (retentionDays + 1) * DAY;
   for (const [key, list] of groups) b.rpush(key, ...list).expire(key, ttl);

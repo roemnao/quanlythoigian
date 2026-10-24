@@ -91,11 +91,14 @@ test('session bộ lọc ↔ agent: lưu theo nhóm và ngày, cắt nội dung 
   const r = await call('POST', '/api/agent/sessions', { events }, { token });
   assert.equal(r.data.saved, 5);
 
+  // Lô sau chỉ có bước bộ lọc (không kèm tên nhóm): tên đã lưu vẫn giữ nguyên.
+  await call('POST', '/api/agent/sessions', { events: [{ at: now, chatId: 'g1', kind: 'filter', decision: 'skip', tier: 'ai' }] }, { token });
   const chats = (await call('GET', '/api/admin/sessions/chats', null, { cookie: admin })).data.chats;
   assert.deepEqual(chats.map((c) => c.chatId).sort(), ['g1', 'g2']);
   assert.equal(chats.find((c) => c.chatId === 'g1').name, 'Nhóm A');
+  assert.equal(chats.find((c) => c.chatId === 'g1').group, true);
   const s = (await call('GET', `/api/admin/sessions?chat=g1&day=${dayKey()}`, null, { cookie: admin })).data;
-  assert.deepEqual(s.events.map((e) => e.kind), ['message', 'filter', 'agent', 'tool']);
+  assert.deepEqual(s.events.map((e) => e.kind), ['message', 'filter', 'agent', 'tool', 'filter']);
   assert.ok(s.events[2].prompt.length < 4100);
   assert.equal((await call('GET', '/api/admin/sessions?chat=g1', null, { token })).status, 401);
 

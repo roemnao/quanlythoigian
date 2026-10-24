@@ -24,7 +24,7 @@ function renderSystem() {
 const dayInput = (value) => h('input', { type: 'date', value });
 // "Hôm nay" theo múi giờ của máy chủ (S.today), không theo đồng hồ của trình duyệt: log và session được xếp theo ngày đó.
 const shiftDay = (key, n) => new Date(Date.parse(`${key}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
-const OP_LABEL = { create: 'Thêm', update: 'Sửa', delete: 'Xoá' };
+const OP_LABEL = { create: 'Thêm', update: 'Sửa', delete: 'Xoá', link: 'Liên kết' };
 const opBadge = (op) => h('span', { class: `badge ${op}` }, OP_LABEL[op] || op);
 const whenText = (e) => (e.allDay ? `${e.start}${e.end ? ` → ${e.end}` : ''} (cả ngày)` : `${fDT(e.start)}${e.end ? ` → ${fDT(e.end)}` : ''}`);
 
@@ -155,6 +155,7 @@ async function sysConfig(body) {
 
 // ---------- Session ----------
 const KIND_LABEL = { message: 'Tin', filter: 'Bộ lọc', agent: 'Agent', tool: 'Tool', reply: 'Trả lời', calbot: 'Bot lịch', error: 'Lỗi' };
+const TIER_LABEL = { private: 'chat riêng', rule: 'quy tắc', mode_default: 'chế độ default', budget: 'hết hạn mức token', ai: 'AI', error: 'lỗi bộ lọc' };
 function sessionRow(e) {
   const t = h('span', { class: 't' }, fTime(e.at));
   const kind = h('span', { class: `badge ${e.kind === 'filter' ? (e.decision === 'skip' ? 'skip' : 'reply') : e.kind === 'error' ? 'terra' : e.kind}` },
@@ -162,17 +163,21 @@ function sessionRow(e) {
   let main;
   if (e.kind === 'message') main = h('div', {}, h('b', {}, e.senderName || e.senderId || '?'), ': ', e.text || '');
   else if (e.kind === 'filter') {
-    main = h('div', {}, h('b', {}, e.decision === 'skip' ? 'Bỏ qua' : 'Cho qua'), ` · tầng ${e.tier === 'ai' ? 'AI' : 'quy tắc'}`,
+    main = h('div', {}, h('b', {}, e.decision === 'skip' ? 'Bỏ qua' : 'Cho qua'), ` · ${TIER_LABEL[e.tier] || e.tier || 'quy tắc'}`,
       e.reason ? ` · ${e.reason}` : '', e.model ? h('span', { class: 'muted small' }, ` · ${e.model}${e.tokens ? `, ${e.tokens} token` : ''}`) : '');
   } else if (e.kind === 'agent') {
-    main = h('div', {}, h('span', { class: 'muted small' }, `${e.model || ''}${e.tokensIn != null ? ` · ${e.tokensIn}+${e.tokensOut ?? 0} token` : ''}${e.ms != null ? ` · ${(e.ms / 1000).toFixed(1)} giây` : ''}`),
+    const tokens = e.tokens ?? (e.tokensIn != null ? e.tokensIn + (e.tokensOut ?? 0) : null);
+    main = h('div', {}, h('span', { class: 'muted small' }, `${e.model || ''}${tokens != null ? ` · ${tokens} token` : ''}${e.ms != null ? ` · ${(e.ms / 1000).toFixed(1)} giây` : ''}`),
       e.reply ? h('div', {}, e.reply) : '',
       e.prompt ? h('details', { class: 'small' }, h('summary', {}, 'Nội dung gửi cho model'), h('pre', { class: 'code' }, e.prompt)) : '');
   } else if (e.kind === 'tool') {
     main = h('div', {}, h('code', {}, e.name || '?'), ' ', h('span', { class: 'muted small' }, JSON.stringify(e.args ?? {})),
       e.result != null ? h('details', { class: 'small' }, h('summary', {}, 'Kết quả'), h('pre', { class: 'code' }, typeof e.result === 'string' ? e.result : JSON.stringify(e.result, null, 2))) : '');
   } else if (e.kind === 'reply') main = h('div', {}, e.text || '');
-  else if (e.kind === 'calbot') main = h('div', {}, opBadge(e.op || 'create'), ' ', e.title || '', e.summary ? h('span', { class: 'muted small' }, ` · ${e.summary}`) : '');
+  else if (e.kind === 'calbot') {
+    main = h('div', {}, e.op === 'link' ? h('span', { class: 'badge lavender' }, 'Liên kết') : opBadge(e.op || 'create'), ' ', e.title || '',
+      e.summary ? h('span', { class: 'muted small' }, ` · ${e.summary}`) : '');
+  }
   else main = h('div', { class: 'err' }, e.message || e.text || JSON.stringify(e));
   return h('li', { class: `sess ${e.kind}` }, t, kind, main);
 }

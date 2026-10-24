@@ -185,7 +185,7 @@ input[type=checkbox], input[type=radio] { width: 18px; height: 18px; accent-colo
 }
 .badge.lake, .badge.create, .badge.reply { background: var(--lake); }
 .badge.terra, .badge.delete, .badge.skip { background: var(--terra); }
-.badge.lavender, .badge.agent { background: var(--lavender); }
+.badge.lavender, .badge.agent, .badge.calbot { background: var(--lavender); }
 .badge.gold, .badge.update, .badge.tool { background: var(--gold); }
 .badge.moss, .badge.ok, .badge.message { background: var(--moss); }
 .badge.muted { background: var(--surface-2); color: var(--muted); }
