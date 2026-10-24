@@ -12,7 +12,7 @@ function findEnv(suffixes) {
   return null;
 }
 
-function redisConfig() {
+export function redisConfig() {
   const url = findEnv(['UPSTASH_REDIS_REST_URL', 'KV_REST_API_URL']);
   const token = findEnv(['UPSTASH_REDIS_REST_TOKEN', 'KV_REST_API_TOKEN']);
   return url && token ? { url: url.replace(/\/$/, ''), token } : null;
@@ -39,6 +39,21 @@ async function redis(command) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.error) throw new Error(`Redis lỗi: ${data.error || res.status}`);
   return data.result;
+}
+
+// Gửi nhiều lệnh trong một lần gọi HTTP (Upstash /pipeline). Trả về kết quả từng lệnh theo thứ tự.
+export async function redisPipeline(commands) {
+  const { url, token } = redisConfig();
+  const res = await fetch(`${url}/pipeline`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(commands),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !Array.isArray(data)) throw new Error(`Redis lỗi: ${data?.error || res.status}`);
+  const bad = data.find((r) => r?.error);
+  if (bad) throw new Error(`Redis lỗi: ${bad.error}`);
+  return data.map((r) => r.result);
 }
 
 export async function loadRaw() {
