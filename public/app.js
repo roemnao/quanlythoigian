@@ -29,8 +29,12 @@ class ApiError extends Error {}
 async function api(method, url, body) {
   const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && data.login) { showLogin(data.usernameRequired); throw new ApiError('Cần đăng nhập'); }
-  if (res.status === 503 && data.setup) { showScreen(data.needsStorage ? 'setup-storage' : 'setup-admin'); throw new ApiError(data.error); }
+  if (res.status === 401 && data.login) { showLogin(data.usernameRequired, data.googleLogin); throw new ApiError('Cần đăng nhập'); }
+  if (res.status === 503 && data.setup) {
+    $('#setup-google').hidden = !data.googleSetup;
+    showScreen(data.needsStorage ? 'setup-storage' : 'setup-admin');
+    throw new ApiError(data.error);
+  }
   if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
   return data;
 }
@@ -57,8 +61,8 @@ const empty = (text) => h('li', { class: 'empty' }, text);
 const WD = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 const startOfWeek = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
 
-const originClass = (e) => (e.origin === 'ics' ? 'ics' : e.origin === 'manual' || !e.origin ? 'manual' : 'ai');
-const originLabel = (o) => (o === 'ics' ? 'Lịch đồng bộ' : o === 'paste' ? 'AI (dán văn bản)' : o === 'zalo' ? 'Zalo' : o?.startsWith('web:') ? `Trang web: ${o.slice(4)}` : 'Tự thêm');
+const originClass = (e) => (e.origin === 'ics' || e.origin === 'google' ? e.origin : e.origin === 'manual' || !e.origin ? 'manual' : 'ai');
+const originLabel = (o) => (o === 'ics' ? 'Lịch đồng bộ' : o === 'google' ? 'Google Lịch' : o === 'paste' ? 'AI (dán văn bản)' : o === 'zalo' ? 'Zalo' : o?.startsWith('web:') ? `Trang web: ${o.slice(4)}` : 'Tự thêm');
 const eventsOn = (k) => S.events.filter((e) => dkey(e.start) === k)
   .sort((a, b) => (b.allDay - a.allDay) || a.start.localeCompare(b.start));
 const dueOn = (k) => S.tasks.filter((t) => !t.done && t.deadline && dkey(t.deadline) === k);
@@ -71,9 +75,10 @@ function showScreen(name) {
   const first = $(`#${name} input`);
   if (first) setTimeout(() => first.focus(), 50);
 }
-function showLogin(usernameRequired = true) {
+function showLogin(usernameRequired = true, googleLogin = false) {
   const u = $('#login-form').username;
   u.hidden = !usernameRequired; u.required = usernameRequired;
+  $('#login-google').hidden = !googleLogin;
   showScreen('login');
 }
 
@@ -290,6 +295,16 @@ $('#modal-delete').onclick = guard(async () => {
 const field = (label, input) => h('label', {}, label, input);
 
 function openEventModal(e, dayKey) {
+  if (e && e.origin === 'google') {
+    openModal({
+      title: e.title, readonly: true,
+      body: [h('div', { class: 'readonly' }, fDay(e.start), ' · ', timeRange(e)),
+        e.note && h('div', { class: 'readonly' }, e.note),
+        h('p', { class: 'small muted' }, `Từ Google Lịch${e.calendar ? ` "${e.calendar}"` : ''}. Muốn sửa, hãy sửa trên Google Lịch. `,
+          e.link && h('a', { href: e.link, target: '_blank', rel: 'noopener' }, 'Mở trong Google Lịch'))],
+    });
+    return;
+  }
   if (e && e.origin === 'ics') {
     const src = S.sources.find((s) => s.id === e.sourceId);
     openModal({
@@ -580,18 +595,100 @@ function renderSettings() {
   };
   $('#key-gemini-now').textContent = keyNow('GEMINI_API_KEY');
   $('#key-zalo-now').textContent = keyNow('ZALO_BOT_TOKEN');
+  const g = c.google;
+  const gNow = (k) => (k.source ? `(đang dùng: ${k.masked}${k.source === 'env' ? ', từ Vercel' : ''})` : '(chưa có)');
+  $('#key-gid-now').textContent = gNow(g.clientId);
+  $('#key-gsecret-now').textContent = gNow(g.clientSecret);
+  $('#google-redirect').value = g.redirectUri;
+  if (!g.configured && !renderSettings.openedGoogle) { $('#google-keys').open = true; renderSettings.openedGoogle = true; }
+  renderGoogle(c);
   $('#key-model-now').textContent = c.keys?.GEMINI_MODEL?.source ? `(đang dùng: ${c.geminiModel})` : `(mặc định: ${c.geminiModel})`;
 
   $('#cal-url').value = c.calendarUrl;
   $('#account-card').hidden = c.auth.mode === 'none';
   $('#account-name').textContent = c.auth.username || 'quản trị';
   $('#password-form').hidden = c.auth.mode !== 'db';
+  const pf = $('#password-form');
+  pf.current.hidden = c.google.noPassword; pf.current.required = !c.google.noPassword;
+  pf.querySelector('button').textContent = c.google.noPassword ? 'Đặt mật khẩu' : 'Đổi mật khẩu';
+}
+
+// Liên kết Gmail vào tài khoản + thẻ Google Lịch.
+function renderGoogle(c) {
+  const g = c.google;
+  const link = $('#google-link-box');
+  if (c.auth.mode !== 'db') link.replaceChildren();
+  else if (g.linked) {
+    link.replaceChildren(googleIcon(), 'Google: ', h('b', {}, g.linked),
+      h('button', { class: 'btn sm ghost', type: 'button', onclick: guard(async () => {
+        if (!confirm('Huỷ liên kết tài khoản Google? Bạn sẽ không đăng nhập bằng Google được nữa.')) return;
+        await api('POST', '/api/google/unlink'); toast('Đã huỷ liên kết Google'); await load();
+      }) }, 'Huỷ liên kết'));
+  } else if (g.configured) {
+    link.replaceChildren(h('a', { class: 'btn sm google-btn', href: '/api/google/start?purpose=link' }, googleIcon(), 'Liên kết với Gmail'),
+      h('span', { class: 'muted' }, 'để đăng nhập bằng Google'));
+  } else {
+    link.replaceChildren(h('span', { class: 'muted' }, 'Muốn đăng nhập bằng Gmail: nhập Google Client ở mục Khoá API trước.'));
+  }
+
+  const box = $('#google-box');
+  if (!g.configured) {
+    box.replaceChildren(h('p', { class: 'small muted' }, 'Đồng bộ 2 chiều với Google Lịch: lịch trên Google hiện ở đây, lịch tạo trên web tự lên Google. Trước tiên hãy nhập Google Client ID và Secret ở mục Khoá API (phần "Google").'),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => { $('#google-keys').open = true; $('#google-keys').scrollIntoView({ behavior: 'smooth' }); } }, 'Mở hướng dẫn'));
+    return;
+  }
+  if (!g.calendar) {
+    box.replaceChildren(h('p', { class: 'small' }, 'Kết nối để thấy lịch Google ngay trên web, và tự đưa lịch bạn tạo ở đây (kể cả từ AI, Zalo) lên Google Lịch.'),
+      h('a', { class: 'btn primary google-btn', href: '/api/google/start?purpose=calendar' }, googleIcon(), 'Kết nối Google Lịch'));
+    return;
+  }
+  const cal = g.calendar;
+  const pushBox = h('input', { type: 'checkbox', checked: cal.push, onchange: guard(async (ev) => {
+    await api('PUT', '/api/google/calendar', { push: ev.target.checked }); toast(ev.target.checked ? 'Sẽ đưa lịch lên Google' : 'Đã tắt đưa lịch lên Google'); await load();
+  }) });
+  const picker = h('div', { class: 'cal-pick' });
+  box.replaceChildren(
+    h('p', { class: 'small' }, 'Đã kết nối: ', h('b', {}, cal.email)),
+    h('p', { class: 'small muted' }, `Đang hiện: ${cal.calendars.map((x) => x.name).join(', ') || 'Lịch chính'}`, ' · ',
+      cal.lastSync ? `Cập nhật ${fDT(cal.lastSync)}` : 'Chưa đồng bộ'),
+    cal.lastError ? h('p', { class: 'small err' }, `Lỗi: ${cal.lastError}`) : '',
+    h('label', { class: 'row small' }, pushBox, 'Tự đưa lịch tạo trên web lên Google Lịch'),
+    picker,
+    h('div', { class: 'row' },
+      h('button', { class: 'btn sm', type: 'button', onclick: guard(async (ev) => {
+        ev.currentTarget.disabled = true;
+        try { const r = await api('POST', '/api/google/sync'); toast(r.pulled?.ok === false ? `⚠️ ${r.pulled.error}` : `Đã đồng bộ${r.pulled?.events != null ? `: ${r.pulled.events} sự kiện từ Google` : ''}`); await load(); } finally { ev.currentTarget.disabled = false; }
+      }) }, icon('refresh'), 'Đồng bộ ngay'),
+      h('button', { class: 'btn sm', type: 'button', onclick: guard(async () => showCalendarPicker(picker)) }, 'Chọn lịch'),
+      h('button', { class: 'btn sm ghost danger', type: 'button', onclick: guard(async () => {
+        if (!confirm('Ngắt kết nối Google Lịch? Lịch từ Google sẽ không hiện ở đây nữa (lịch trên Google vẫn giữ nguyên).')) return;
+        await api('POST', '/api/google/disconnect'); toast('Đã ngắt kết nối Google Lịch'); await load();
+      }) }, 'Ngắt kết nối')));
+}
+async function showCalendarPicker(picker) {
+  picker.replaceChildren(h('span', { class: 'small muted' }, 'Đang tải danh sách lịch…'));
+  const list = await api('GET', '/api/google/calendars');
+  const boxes = list.map((c) => ({ c, input: h('input', { type: 'checkbox', checked: c.selected }) }));
+  picker.replaceChildren(h('b', { class: 'small' }, 'Hiện những lịch nào trên web?'),
+    ...boxes.map(({ c, input }) => h('label', {}, input, h('i', { style: `background:${c.color || 'var(--ev-google)'}` }), c.name, c.primary ? ' (chính)' : '')),
+    h('div', { class: 'row' }, h('button', { class: 'btn sm primary', type: 'button', onclick: guard(async () => {
+      const calendars = boxes.filter((b) => b.input.checked).map(({ c }) => ({ id: c.id, name: c.name }));
+      if (!calendars.length) throw new Error('Chọn ít nhất 1 lịch');
+      await api('PUT', '/api/google/calendar', { calendars }); toast('Đã cập nhật lịch hiện trên web'); await load();
+    }) }, 'Lưu lựa chọn')));
+}
+function googleIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'gicon'); svg.setAttribute('viewBox', '0 0 48 48');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', '#i-google'); svg.append(use);
+  return svg;
 }
 $('#keys-form').addEventListener('submit', guard(async (ev) => {
   ev.preventDefault();
   const f = ev.target; const msg = $('#keys-msg'); const btn = $('#keys-save');
   const body = {};
-  for (const name of ['geminiApiKey', 'zaloBotToken', 'geminiModel']) if (f[name].value.trim()) body[name] = f[name].value.trim();
+  for (const name of ['geminiApiKey', 'zaloBotToken', 'geminiModel', 'googleClientId', 'googleClientSecret']) if (f[name].value.trim()) body[name] = f[name].value.trim();
   if (!Object.keys(body).length) { msg.textContent = 'Bạn chưa dán key nào.'; msg.className = 'small err'; return; }
   btn.disabled = true; msg.textContent = 'Đang lưu và kiểm tra…'; msg.className = 'small muted';
   try {
@@ -603,6 +700,9 @@ $('#keys-form').addEventListener('submit', guard(async (ev) => {
       if (r.zalo.webhook) parts.push('✅ đã kết nối webhook');
       if (r.zalo.webhookError) parts.push(`⚠️ webhook: ${r.zalo.webhookError}`);
     }
+    if (body.googleClientId || body.googleClientSecret) {
+      parts.push(r.googleConfigured ? '✅ đã lưu Google Client' : '⚠️ cần nhập đủ cả Client ID và Client Secret');
+    }
     const bad = parts.some((p) => p.startsWith('❌'));
     msg.textContent = parts.join(' · ') || 'Đã lưu';
     msg.className = `small ${bad ? 'err' : 'ok'}`;
@@ -612,7 +712,7 @@ $('#keys-form').addEventListener('submit', guard(async (ev) => {
     msg.textContent = e.message; msg.className = 'small err';
   } finally { btn.disabled = false; }
 }));
-$('#logout').onclick = guard(async () => { await api('POST', '/api/logout'); showLogin(Boolean(S?.config.auth.username)); });
+$('#logout').onclick = guard(async () => { await api('POST', '/api/logout'); await load(); }); // load() gặp 401 → hiện màn hình đăng nhập
 $('#password-form').addEventListener('submit', guard(async (ev) => {
   ev.preventDefault();
   const f = ev.target;
@@ -711,6 +811,19 @@ function renderPomoStats() {
 }
 
 // ---------- Khởi động ----------
+// Quay về từ trang đăng nhập Google: báo kết quả rồi xoá tham số khỏi địa chỉ.
+const qs = new URLSearchParams(location.search);
+if (qs.has('google') || qs.has('google_error')) {
+  const done = { login: 'Đã đăng nhập bằng Google', setup: 'Đã tạo tài khoản bằng Google', linked: 'Đã liên kết tài khoản Google', calendar: 'Đã kết nối Google Lịch 🎉' };
+  const err = qs.get('google_error');
+  const ok = qs.get('google');
+  history.replaceState(null, '', location.pathname);
+  if (ok === 'linked' || ok === 'calendar') try { localStorage.setItem('view', 'settings'); } catch {}
+  setTimeout(() => {
+    toast(err ? `⚠️ ${err}` : done[ok] || 'Xong', 7000);
+    if (err && !$('#login').hidden) { $('#login-error').textContent = err; $('#login-error').hidden = false; }
+  }, 400);
+}
 try {
   const v = localStorage.getItem('view'); if (v) view = v;
   const m = localStorage.getItem('calMode'); if (m === 'week' || m === 'month') cal.mode = m;

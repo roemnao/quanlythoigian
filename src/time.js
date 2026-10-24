@@ -29,3 +29,14 @@ export function nowContext(date = new Date()) {
   }).format(date);
   return `${full} (múi giờ ${TZ})`;
 }
+
+// Thời điểm 00:00 của ngày 'YYYY-MM-DD' theo múi giờ TZ (dạng ISO UTC).
+export function zonedMidnight(date) {
+  const guess = new Date(`${date}T00:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(guess);
+  const get = (t) => Number(parts.find((p) => p.type === t).value);
+  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'));
+  return new Date(guess.getTime() - (asUtc - guess.getTime())).toISOString();
+}

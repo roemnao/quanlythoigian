@@ -4,6 +4,8 @@ export const KEY_FIELDS = {
   GEMINI_API_KEY: 'geminiApiKey',
   GEMINI_MODEL: 'geminiModel',
   ZALO_BOT_TOKEN: 'zaloBotToken',
+  GOOGLE_CLIENT_ID: 'googleClientId',
+  GOOGLE_CLIENT_SECRET: 'googleClientSecret',
 };
 
 let fromWeb = {};

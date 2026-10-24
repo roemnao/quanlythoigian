@@ -35,6 +35,20 @@ Web quản lý thời gian cá nhân. Web **tự lấy lịch từ các nguồn 
 
 Từ đó, mỗi lần có code mới đẩy lên nhánh chính của repo, Vercel sẽ tự deploy lại.
 
+## 🔑 Đăng nhập bằng Gmail & Google Lịch
+Web có thể: **tạo tài khoản / đăng nhập bằng Google**, **liên kết Gmail** vào tài khoản có sẵn, và **đồng bộ 2 chiều với Google Lịch** (lịch Google hiện trên web; lịch tạo trên web, kể cả từ AI/Zalo, tự lên Google Lịch).
+
+Cần một OAuth Client miễn phí của Google:
+1. Vào https://console.cloud.google.com, tạo project và bật **Google Calendar API**.
+2. Vào **Google Auth Platform**, điền tên ứng dụng và email, chọn **External**. Ở mục **Audience**, bấm **Publish app**. Nếu để chế độ *Testing*, Google sẽ ngắt kết nối lịch sau 7 ngày. Khi đăng nhập, Google có thể cảnh báo "ứng dụng chưa được xác minh": bấm **Nâng cao** rồi **Tiếp tục** (đây là ứng dụng của chính bạn).
+3. Vào **Clients**, chọn **Create client**, loại **Web application**. Ở **Authorized redirect URIs**, dán `https://<tên-web>.vercel.app/api/google/callback`; địa chỉ này có sẵn trong Cài đặt → Khoá API → Google để sao chép.
+4. Dán **Client ID** và **Client secret** vào **Cài đặt → Khoá API → Google**, rồi bấm Lưu.
+5. Trong **Cài đặt**:
+   - **Tài khoản → Liên kết với Gmail**: sau đó đăng nhập được bằng nút "Đăng nhập bằng Google".
+   - **Google Lịch → Kết nối Google Lịch**: chọn lịch muốn hiện và bật/tắt việc tự đưa lịch lên Google.
+
+Lịch kéo từ Google chỉ xem được trên web; muốn sửa, hãy sửa trên Google Lịch. Web chỉ đồng bộ từ 7 ngày trước đến 90 ngày tới.
+
 ## 💻 Chạy trên máy
 Cần Node.js ≥ 20.12.
 ```bash
@@ -67,6 +81,8 @@ server.js          chạy trên máy (polling Zalo + cron mỗi phút)
 vercel.json        cấu hình Vercel (rewrite, cron hằng ngày)
 src/app.js         API Express + đăng nhập
 src/auth.js        tài khoản quản trị (băm mật khẩu scrypt, phiên đăng nhập)
+src/google.js      đăng nhập Google, đồng bộ Google Lịch
+src/config.js      khoá API nhập trên web / biến môi trường
 src/storage.js     lưu dữ liệu: Upstash Redis hoặc file JSON
 src/db.js          dữ liệu, chống trùng, hàng chờ đề xuất
 src/gemini.js      gọi Gemini để trích lịch từ văn bản

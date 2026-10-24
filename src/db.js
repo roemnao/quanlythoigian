@@ -12,6 +12,7 @@ const EMPTY = () => ({
   sources: [],     // { id, type: 'ics'|'web', name, url, lastSync, lastError, lastHash }
   pomodoros: [],   // { at, minutes, taskId }
   settings: {},    // { geminiApiKey, geminiModel, zaloBotToken } — khoá nhập trên web
+  google: null,    // { refreshToken, email, calendars: [{id,name}], push, lastSync, lastError, pendingDeletes }
   auth: null,      // { admin: { username, salt, hash }, secret } — tài khoản quản trị (mật khẩu đã băm)
   meta: { reminded: {}, lastSummaryDate: null, zaloChatId: null, zaloName: null, pairCode: null },
 });
@@ -106,13 +107,13 @@ export class Store {
     return this.data.suggestions.length !== before;
   }
 
-  // Thay toàn bộ sự kiện của một nguồn lịch (ICS) bằng danh sách mới.
-  replaceSourceEvents(sourceId, events) {
+  // Thay toàn bộ sự kiện của một nguồn lịch (ICS / Google) bằng danh sách mới.
+  replaceSourceEvents(sourceId, events, origin = 'ics') {
     this.data.events = this.data.events.filter((e) => e.sourceId !== sourceId);
     for (const { uid, ...e } of events) {
       // ID cố định theo nguồn + UID + giờ bắt đầu để đồng bộ lại không tạo mục "mới".
       const id = crypto.createHash('sha1').update(`${sourceId}|${uid || e.title}|${e.start}`).digest('hex').slice(0, 12);
-      this.data.events.push({ id, ...e, sourceId, origin: 'ics' });
+      this.data.events.push({ id, ...e, sourceId, origin });
     }
   }
 }

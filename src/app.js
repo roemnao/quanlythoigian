@@ -8,6 +8,9 @@ import { waitUntil } from '@vercel/functions';
 import { Store, newId } from './db.js';
 import { DEFAULT_MODEL, checkGemini, extractItems, geminiConfigured } from './gemini.js';
 import { cfg, cfgSource, mask } from './config.js';
+import {
+  authUrl, exchangeCode, googleConfigured, isGoogleReady, listCalendars, pullGoogle, pushGoogle, revoke, syncGoogle,
+} from './google.js';
 import { syncSources } from './sources.js';
 import { runCron } from './cron.js';
 import { storageKind } from './storage.js';
@@ -109,6 +112,8 @@ function setupState(store) {
     needsStorage: mode === 'none' && isVercel && storageKind() === 'tmp',
     needsAdmin: mode === 'none',
     usernameRequired: mode === 'db' || (mode === 'env' && Boolean(process.env.ADMIN_USERNAME)),
+    googleLogin: googleConfigured() && mode === 'db' && Boolean(store.data.auth.admin.google),
+    googleSetup: googleConfigured() && mode === 'none' && !(isVercel && storageKind() === 'tmp'),
   };
 }
 app.get('/api/auth/status', wrap(async (req, res) => {
@@ -147,6 +152,90 @@ app.post('/api/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+// ----- Đăng nhập / liên kết / Google Lịch qua tài khoản Google -----
+const OAUTH_COOKIE = 'qltg_oauth';
+const PURPOSES = ['login', 'setup', 'link', 'calendar'];
+const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
+const redirectUri = (req) => `${baseUrl(req)}/api/google/callback`;
+const backTo = (res, params) => res.redirect(`/?${new URLSearchParams(params)}`);
+
+// Tên đăng nhập gợi ý từ email: phần trước @, chỉ giữ ký tự hợp lệ.
+function usernameFromEmail(email) {
+  const u = String(email).split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '.').replace(/^\.+|\.+$/g, '').slice(0, 32);
+  return u.length >= 3 ? u : `${u}.user`.slice(0, 32);
+}
+
+app.get('/api/google/start', wrap(async (req, res) => {
+  const purpose = String(req.query.purpose || '');
+  if (!PURPOSES.includes(purpose)) throw fail(400, 'Mục đích không hợp lệ');
+  const store = await Store.open();
+  if (!googleConfigured()) return backTo(res, { google_error: 'Chưa nhập Google Client ID/Secret ở Cài đặt → Khoá API' });
+  if ((purpose === 'link' || purpose === 'calendar') && !verifySession(store, readCookie(req, COOKIE))) {
+    return backTo(res, { google_error: 'Hãy đăng nhập trước' });
+  }
+  // Chống giả mạo (CSRF): mã ngẫu nhiên vừa nằm trong state vừa nằm trong cookie của trình duyệt này.
+  const nonce = crypto.randomBytes(16).toString('hex');
+  res.cookie(OAUTH_COOKIE, nonce, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60 * 1000, path: '/api/google' });
+  const loginHint = purpose === 'calendar' ? store.data.auth?.admin?.google?.email : undefined;
+  res.redirect(authUrl({ redirectUri: redirectUri(req), state: `${purpose}.${nonce}`, purpose, loginHint }));
+}));
+
+app.get('/api/google/callback', wrap(async (req, res) => {
+  const [purpose, nonce] = String(req.query.state || '').split('.');
+  const expected = readCookie(req, OAUTH_COOKIE);
+  res.clearCookie(OAUTH_COOKIE, { path: '/api/google' });
+  if (req.query.error) return backTo(res, { google_error: req.query.error === 'access_denied' ? 'Bạn đã huỷ đăng nhập Google' : String(req.query.error) });
+  if (!PURPOSES.includes(purpose) || !nonce || !expected || !safeEqual(nonce, expected)) {
+    return backTo(res, { google_error: 'Phiên đăng nhập Google không hợp lệ, hãy thử lại' });
+  }
+  try {
+    await Store.open(); // nạp Client ID/Secret
+    const { claims, refreshToken } = await exchangeCode(String(req.query.code || ''), redirectUri(req));
+    const store = await Store.open();
+    const admin = store.data.auth?.admin;
+    const loggedIn = verifySession(store, readCookie(req, COOKIE));
+
+    if (purpose === 'login') {
+      if (authMode(store) !== 'db' || admin.google?.sub !== claims.sub) {
+        return backTo(res, { google_error: `Tài khoản Google ${claims.email} chưa được liên kết với web này` });
+      }
+      setSession(req, res, store, admin.username);
+      return backTo(res, { google: 'login' });
+    }
+    if (purpose === 'setup') {
+      const st = setupState(store);
+      if (!st.needsAdmin || st.needsStorage) return backTo(res, { google_error: 'Đã có tài khoản quản trị, hãy đăng nhập' });
+      const user = await createAdmin(store, usernameFromEmail(claims.email), crypto.randomBytes(24).toString('hex'));
+      Object.assign(store.data.auth.admin, { noPassword: true, google: { sub: claims.sub, email: claims.email } });
+      await store.save();
+      setSession(req, res, store, user);
+      return backTo(res, { google: 'setup' });
+    }
+    if (!loggedIn) return backTo(res, { google_error: 'Hãy đăng nhập trước' });
+    if (purpose === 'link') {
+      if (authMode(store) !== 'db') return backTo(res, { google_error: 'Chỉ liên kết được với tài khoản tạo trên web' });
+      admin.google = { sub: claims.sub, email: claims.email };
+      await store.save();
+      return backTo(res, { google: 'linked' });
+    }
+    // purpose === 'calendar'
+    if (!refreshToken) return backTo(res, { google_error: 'Google không cấp quyền dùng lâu dài. Vào myaccount.google.com/permissions gỡ quyền của ứng dụng rồi kết nối lại.' });
+    if (store.data.google?.refreshToken) await revoke(store.data.google.refreshToken);
+    let calendars = [{ id: 'primary', name: 'Lịch chính' }];
+    try {
+      const all = await listCalendars(refreshToken);
+      const primary = all.find((c) => c.primary);
+      if (primary) calendars = [{ id: primary.id, name: primary.name }];
+    } catch { /* dùng lịch chính mặc định */ }
+    store.data.google = { refreshToken, email: claims.email, calendars, push: true, connectedAt: new Date().toISOString(), pendingDeletes: [] };
+    await store.save();
+    await syncGoogle(Store.open);
+    return backTo(res, { google: 'calendar' });
+  } catch (err) {
+    return backTo(res, { google_error: err.message });
+  }
+}));
+
 app.use('/api', wrap(async (req, res, next) => {
   const store = await Store.open();
   const st = setupState(store);
@@ -156,7 +245,7 @@ app.use('/api', wrap(async (req, res, next) => {
     return res.status(503).json({ error: 'Cần tạo tài khoản quản trị', setup: true, ...st });
   }
   if (verifySession(store, readCookie(req, COOKIE))) return next();
-  res.status(401).json({ error: 'Cần đăng nhập', login: true, usernameRequired: st.usernameRequired });
+  res.status(401).json({ error: 'Cần đăng nhập', login: true, usernameRequired: st.usernameRequired, googleLogin: st.googleLogin });
 }));
 
 // Đổi mật khẩu (tài khoản tạo trên web).
@@ -164,10 +253,14 @@ app.post('/api/account/password', wrap(async (req, res) => {
   const { current, next: newPassword } = req.body || {};
   const store = await Store.open();
   if (authMode(store) !== 'db') throw fail(400, 'Mật khẩu đang đặt bằng APP_PASSWORD trong cấu hình máy chủ');
-  if (!(await verifyPassword(current, store.data.auth.admin))) { await slowDown(); throw fail(401, 'Mật khẩu hiện tại không đúng'); }
+  // Tài khoản tạo bằng Google chưa có mật khẩu: đặt lần đầu không cần mật khẩu cũ.
+  if (!store.data.auth.admin.noPassword && !(await verifyPassword(current, store.data.auth.admin))) {
+    await slowDown(); throw fail(401, 'Mật khẩu hiện tại không đúng');
+  }
   const problem = validateNew(store.data.auth.admin.username, newPassword);
   if (problem) throw fail(400, problem);
   await changePassword(store, newPassword);
+  delete store.data.auth.admin.noPassword;
   await store.save();
   setSession(req, res, store, store.data.auth.admin.username); // phiên cũ ở máy khác hết hiệu lực
   res.json({ ok: true });
@@ -196,27 +289,52 @@ app.get('/api/state', wrap(async (req, res) => {
       auth: { mode: authMode(store), username: adminName(store) },
       calendarUrl: `${base}/calendar.ics${calendarKey(store) ? `?key=${calendarKey(store)}` : ''}`,
       cronUrl: `${base}/api/cron${process.env.CRON_SECRET ? '?key=<CRON_SECRET>' : ''}`,
+      google: {
+        configured: googleConfigured(),
+        clientId: { source: cfgSource('GOOGLE_CLIENT_ID'), masked: mask(cfg('GOOGLE_CLIENT_ID')) },
+        clientSecret: { source: cfgSource('GOOGLE_CLIENT_SECRET'), masked: mask(cfg('GOOGLE_CLIENT_SECRET')) },
+        redirectUri: `${base}/api/google/callback`,
+        linked: d.auth?.admin?.google?.email || null,
+        noPassword: Boolean(d.auth?.admin?.noPassword),
+        calendar: d.google ? {
+          email: d.google.email, calendars: d.google.calendars, push: d.google.push,
+          lastSync: d.google.lastSync, lastError: d.google.lastError,
+        } : null,
+      },
     },
   });
 }));
 
 // ----- Sự kiện -----
 const EVENT_FIELDS = ['title', 'start', 'end', 'allDay', 'note'];
+const READ_ONLY = { ics: 'Sự kiện từ nguồn ICS chỉ sửa được ở lịch gốc', google: 'Sự kiện từ Google Lịch hãy sửa trên Google Lịch' };
+// Sau khi lịch thay đổi: đẩy lên Google Lịch ở nền (nếu đã kết nối).
+const kickGoogle = () => waitUntil(pushGoogle(Store.open).catch((err) => console.warn('[google]', err.message)));
 app.post('/api/events', wrap(async (req, res) => {
   const e = { id: newId(), allDay: false, note: '', origin: 'manual', ...pick(req.body, EVENT_FIELDS) };
   if (!e.title || !e.start) throw fail(400, 'Cần tiêu đề và thời gian bắt đầu');
   await mutate((s) => s.data.events.push(e));
+  kickGoogle();
   res.json(e);
 }));
 app.patch('/api/events/:id', wrap(async (req, res) => {
   res.json(await mutate((s) => {
     const e = findOr404(s.data.events, req.params.id);
-    if (e.origin === 'ics') throw fail(400, 'Sự kiện từ nguồn ICS chỉ sửa được ở lịch gốc');
-    return Object.assign(e, pick(req.body, EVENT_FIELDS));
+    if (READ_ONLY[e.origin]) throw fail(400, READ_ONLY[e.origin]);
+    Object.assign(e, pick(req.body, EVENT_FIELDS));
+    if (e.googleId) e.googleDirty = Date.now();
+    return e;
   }));
+  kickGoogle();
 }));
 app.delete('/api/events/:id', wrap(async (req, res) => {
-  await mutate((s) => { s.data.events = s.data.events.filter((e) => e.id !== req.params.id); });
+  await mutate((s) => {
+    const e = s.data.events.find((x) => x.id === req.params.id);
+    if (e?.origin === 'google') throw fail(400, READ_ONLY.google);
+    if (e?.googleId && s.data.google) (s.data.google.pendingDeletes ||= []).push(e.googleId);
+    s.data.events = s.data.events.filter((x) => x.id !== req.params.id);
+  });
+  kickGoogle();
   res.json({ ok: true });
 }));
 
@@ -270,12 +388,14 @@ app.post('/api/suggestions/approve-all', wrap(async (req, res) => {
     ids.forEach((id) => s.approveSuggestion(id));
     return ids.length;
   });
+  kickGoogle();
   res.json({ approved });
 }));
 app.post('/api/suggestions/:id/approve', wrap(async (req, res) => {
   const fields = pick(req.body || {}, ['title', 'start', 'end', 'deadline', 'quadrant', 'kind', 'note']);
   const r = await mutate((s) => s.approveSuggestion(req.params.id, fields));
   if (!r) throw fail(404, 'Không tìm thấy đề xuất');
+  if (r.kind === 'event') kickGoogle();
   res.json(r);
 }));
 app.post('/api/suggestions/:id/reject', wrap(async (req, res) => {
@@ -313,7 +433,10 @@ app.post('/api/sources/:id/sync', wrap(async (req, res) => {
 // Gửi chuỗi rỗng để xoá (quay về dùng biến môi trường nếu có); bỏ qua trường không gửi.
 app.put('/api/settings/keys', wrap(async (req, res) => {
   const body = req.body || {};
-  const fields = { geminiApiKey: 'GEMINI_API_KEY', zaloBotToken: 'ZALO_BOT_TOKEN', geminiModel: 'GEMINI_MODEL' };
+  const fields = {
+    geminiApiKey: 'GEMINI_API_KEY', zaloBotToken: 'ZALO_BOT_TOKEN', geminiModel: 'GEMINI_MODEL',
+    googleClientId: 'GOOGLE_CLIENT_ID', googleClientSecret: 'GOOGLE_CLIENT_SECRET',
+  };
   const store = await Store.open();
   const settings = { ...store.data.settings };
   const changed = [];
@@ -331,6 +454,7 @@ app.put('/api/settings/keys', wrap(async (req, res) => {
   // Kiểm tra ngay để báo cho người dùng key có dùng được không.
   const result = { saved: changed };
   if (changed.includes('geminiApiKey') || changed.includes('geminiModel')) result.gemini = await checkGemini();
+  if (changed.includes('googleClientId') || changed.includes('googleClientSecret')) result.googleConfigured = googleConfigured();
   if (changed.includes('zaloBotToken') && zaloConfigured()) {
     try {
       const me = await getMe();
@@ -345,6 +469,45 @@ app.put('/api/settings/keys', wrap(async (req, res) => {
     }
   }
   res.json(result);
+}));
+
+// ----- Google (cần đăng nhập) -----
+app.post('/api/google/unlink', wrap(async (req, res) => {
+  await mutate((s) => {
+    const admin = s.data.auth?.admin;
+    if (admin?.noPassword) throw fail(400, 'Tài khoản tạo bằng Google: hãy đặt mật khẩu trước khi huỷ liên kết');
+    if (admin) delete admin.google;
+  });
+  res.json({ ok: true });
+}));
+app.get('/api/google/calendars', wrap(async (req, res) => {
+  const store = await Store.open();
+  if (!isGoogleReady(store)) throw fail(400, 'Chưa kết nối Google Lịch');
+  const selected = new Set(store.data.google.calendars.map((c) => c.id));
+  const all = await listCalendars(store.data.google.refreshToken);
+  res.json(all.map((c) => ({ ...c, selected: selected.has(c.id) || (c.primary && selected.has('primary')) })));
+}));
+app.put('/api/google/calendar', wrap(async (req, res) => {
+  const { calendars, push } = req.body || {};
+  await mutate((s) => {
+    if (!s.data.google) throw fail(400, 'Chưa kết nối Google Lịch');
+    if (Array.isArray(calendars)) {
+      s.data.google.calendars = calendars.slice(0, 20).map((c) => ({ id: String(c.id), name: String(c.name || c.id) }));
+      s.data.google.lastSync = null; // đồng bộ lại ngay với danh sách mới
+    }
+    if (typeof push === 'boolean') s.data.google.push = push;
+  });
+  res.json(await syncGoogle(Store.open));
+}));
+app.post('/api/google/sync', wrap(async (req, res) => res.json(await syncGoogle(Store.open))));
+app.post('/api/google/disconnect', wrap(async (req, res) => {
+  const store = await Store.open();
+  if (store.data.google?.refreshToken) await revoke(store.data.google.refreshToken);
+  store.data.google = null;
+  store.data.events = store.data.events.filter((e) => e.origin !== 'google');
+  for (const e of store.data.events) { delete e.googleId; delete e.googleDirty; }
+  await store.save();
+  res.json({ ok: true });
 }));
 
 // ----- Zalo -----

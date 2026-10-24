@@ -2,6 +2,7 @@
 // Trên Vercel được gọi qua /api/cron (Vercel Cron hoặc cron-job.org); trên máy thì chạy bằng setInterval.
 import { Store } from './db.js';
 import { syncSources } from './sources.js';
+import { syncGoogle } from './google.js';
 import { dayAgenda, ownerChatId, sendMessage, zaloConfigured } from './zalo.js';
 import { dayKey, fmtTime, hourOf } from './time.js';
 
@@ -44,6 +45,11 @@ export async function runCron({ now = new Date(), forceSync = false } = {}) {
   const results = await syncSources(Store.open, { olderThanMs: forceSync ? 0 : syncEvery - MIN });
   report.synced = Object.keys(results).length;
   report.syncErrors = Object.values(results).filter((r) => !r.ok).map((r) => r.error);
+  try {
+    report.google = await syncGoogle(Store.open, { olderThanMs: forceSync ? 0 : syncEvery - MIN });
+  } catch (err) {
+    report.syncErrors.push(`Google: ${err.message}`);
+  }
 
   const store = await Store.open();
   const chatId = ownerChatId(store);
