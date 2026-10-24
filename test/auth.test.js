@@ -59,3 +59,23 @@ test('tạo tài khoản quản trị, đăng nhập, đổi mật khẩu', asyn
   assert.equal((await fetch(`${base}/calendar.ics`)).status, 401);
   assert.equal((await fetch(state.config.calendarUrl.replace(/^https?:\/\/[^/]+/, base))).status, 200);
 });
+
+test('nhập khoá API trên web: chỉ người đăng nhập, không trả lại toàn bộ key', async () => {
+  process.env.ZALO_API_BASE = 'http://127.0.0.1:9'; // không gọi Zalo thật khi kiểm thử
+  const login = await call('POST', '/api/login', { username: 'roemnao', password: 'moi12345' });
+  const token = '1234567890:abcdefghijklmnopqrstuvwxyz';
+  assert.equal((await call('PUT', '/api/settings/keys', { zaloBotToken: token })).status, 401);
+  assert.equal((await call('PUT', '/api/settings/keys', { zaloBotToken: 'co khoang trang' }, login.cookie)).status, 400);
+  const r = await call('PUT', '/api/settings/keys', { zaloBotToken: token }, login.cookie);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.zalo.ok, false); // Zalo không với tới được → báo lỗi, vẫn lưu
+  const st = await call('GET', '/api/state', null, login.cookie);
+  assert.equal(st.data.config.zalo, true);
+  assert.equal(st.data.config.keys.ZALO_BOT_TOKEN.source, 'web');
+  assert.equal(st.data.config.keys.ZALO_BOT_TOKEN.masked, '1234…wxyz');
+  assert.ok(!JSON.stringify(st.data).includes(token));
+  // Gửi rỗng = xoá key nhập trên web.
+  await call('PUT', '/api/settings/keys', { zaloBotToken: '' }, login.cookie);
+  const st2 = await call('GET', '/api/state', null, login.cookie);
+  assert.notEqual(st2.data.config.keys.ZALO_BOT_TOKEN.source, 'web');
+});

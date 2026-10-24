@@ -515,9 +515,9 @@ function renderSettings() {
   const storageText = { redis: ['Upstash Redis', 'Dữ liệu lưu online, an toàn.'], file: ['File trên máy', 'data/db.json'],
     tmp: ['Tạm thời (/tmp)', 'Cần thêm Upstash Redis: Vercel → Storage → Upstash → Connect.'] }[c.storage];
   $('#status').replaceChildren(
-    statusRow(c.gemini, 'AI Gemini', c.gemini ? `Model ${c.geminiModel}` : 'Thiếu GEMINI_API_KEY'),
+    statusRow(c.gemini, 'AI Gemini', c.gemini ? `Model ${c.geminiModel}` : 'Chưa có key: nhập ở mục Khoá API phía trên'),
     statusRow(c.storage !== 'tmp', `Lưu trữ: ${storageText[0]}`, storageText[1]),
-    statusRow(c.zalo, 'Zalo Bot', c.zalo ? `Chế độ ${c.zaloMode === 'webhook' ? 'webhook' : 'polling (trên máy)'}` : 'Thiếu ZALO_BOT_TOKEN'),
+    statusRow(c.zalo, 'Zalo Bot', c.zalo ? `Chế độ ${c.zaloMode === 'webhook' ? 'webhook' : 'polling (trên máy)'}` : 'Chưa có token: nhập ở mục Khoá API phía trên'),
     statusRow(Boolean(c.zaloOwner), 'Nhận nhắc việc qua Zalo', c.zaloOwner ? `Đã kết nối${c.zaloOwner.name ? ` với ${c.zaloOwner.name}` : ''}` : 'Chưa ghép nối'),
     statusRow(c.auth.mode !== 'none', 'Bảo vệ bằng mật khẩu', c.auth.mode === 'none' ? 'Chưa có tài khoản' : c.auth.username ? `Tài khoản ${c.auth.username}` : 'Đặt bằng APP_PASSWORD'));
 
@@ -528,7 +528,7 @@ function renderSettings() {
 
   const z = $('#zalo-box');
   if (!c.zalo) {
-    z.replaceChildren(h('p', { class: 'muted small' }, 'Chưa có ZALO_BOT_TOKEN. Thêm biến này vào cấu hình (Vercel → Settings → Environment Variables) rồi deploy lại.'));
+    z.replaceChildren(h('p', { class: 'muted small' }, 'Chưa có token bot Zalo. Dán token vào mục Khoá API ở đầu trang rồi bấm Lưu.'));
   } else {
     const steps = [];
     if (c.zaloMode === 'webhook') {
@@ -574,11 +574,44 @@ function renderSettings() {
       await load();
     }) }, icon('refresh'), 'Chạy ngay')));
 
+  const keyNow = (k) => {
+    const info = c.keys?.[k];
+    return info?.source ? `(đang dùng: ${info.masked}${info.source === 'env' ? ', từ Vercel' : ''})` : '(chưa có)';
+  };
+  $('#key-gemini-now').textContent = keyNow('GEMINI_API_KEY');
+  $('#key-zalo-now').textContent = keyNow('ZALO_BOT_TOKEN');
+  $('#key-model-now').textContent = c.keys?.GEMINI_MODEL?.source ? `(đang dùng: ${c.geminiModel})` : `(mặc định: ${c.geminiModel})`;
+
   $('#cal-url').value = c.calendarUrl;
   $('#account-card').hidden = c.auth.mode === 'none';
   $('#account-name').textContent = c.auth.username || 'quản trị';
   $('#password-form').hidden = c.auth.mode !== 'db';
 }
+$('#keys-form').addEventListener('submit', guard(async (ev) => {
+  ev.preventDefault();
+  const f = ev.target; const msg = $('#keys-msg'); const btn = $('#keys-save');
+  const body = {};
+  for (const name of ['geminiApiKey', 'zaloBotToken', 'geminiModel']) if (f[name].value.trim()) body[name] = f[name].value.trim();
+  if (!Object.keys(body).length) { msg.textContent = 'Bạn chưa dán key nào.'; msg.className = 'small err'; return; }
+  btn.disabled = true; msg.textContent = 'Đang lưu và kiểm tra…'; msg.className = 'small muted';
+  try {
+    const r = await api('PUT', '/api/settings/keys', body);
+    const parts = [];
+    if (r.gemini) parts.push(r.gemini.ok ? '✅ Gemini dùng được' : `❌ Gemini: ${r.gemini.error}`);
+    if (r.zalo) {
+      parts.push(r.zalo.ok ? `✅ Zalo bot${r.zalo.name ? ` "${r.zalo.name}"` : ''} dùng được` : `❌ Zalo: ${r.zalo.error}`);
+      if (r.zalo.webhook) parts.push('✅ đã kết nối webhook');
+      if (r.zalo.webhookError) parts.push(`⚠️ webhook: ${r.zalo.webhookError}`);
+    }
+    const bad = parts.some((p) => p.startsWith('❌'));
+    msg.textContent = parts.join(' · ') || 'Đã lưu';
+    msg.className = `small ${bad ? 'err' : 'ok'}`;
+    f.reset();
+    await load();
+  } catch (e) {
+    msg.textContent = e.message; msg.className = 'small err';
+  } finally { btn.disabled = false; }
+}));
 $('#logout').onclick = guard(async () => { await api('POST', '/api/logout'); showLogin(Boolean(S?.config.auth.username)); });
 $('#password-form').addEventListener('submit', guard(async (ev) => {
   ev.preventDefault();

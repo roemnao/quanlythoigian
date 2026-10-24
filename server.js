@@ -4,6 +4,9 @@ import { startLocalCron } from './src/cron.js';
 import { geminiConfigured } from './src/gemini.js';
 import { startPolling, zaloConfigured } from './src/zalo.js';
 import { storageKind } from './src/storage.js';
+import { Store } from './src/db.js';
+
+await Store.open(); // nạp khoá nhập trên web (nếu có) trước khi kiểm tra cấu hình
 
 const port = Number(process.env.PORT) || 3000;
 const mode = process.env.ZALO_MODE || 'polling';

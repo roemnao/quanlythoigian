@@ -2,6 +2,7 @@
 // Các phương thức chỉ thay đổi dữ liệu trong bộ nhớ; người gọi tự `await store.save()`.
 import crypto from 'node:crypto';
 import { loadRaw, saveRaw } from './storage.js';
+import { applySettings } from './config.js';
 
 const EMPTY = () => ({
   events: [],      // { id, title, start, end, allDay, note, sourceId, origin }
@@ -10,6 +11,7 @@ const EMPTY = () => ({
   suggestions: [], // { id, kind, title, start, end, deadline, quadrant, note, origin, createdAt }
   sources: [],     // { id, type: 'ics'|'web', name, url, lastSync, lastError, lastHash }
   pomodoros: [],   // { at, minutes, taskId }
+  settings: {},    // { geminiApiKey, geminiModel, zaloBotToken } — khoá nhập trên web
   auth: null,      // { admin: { username, salt, hash }, secret } — tài khoản quản trị (mật khẩu đã băm)
   meta: { reminded: {}, lastSummaryDate: null, zaloChatId: null, zaloName: null, pairCode: null },
 });
@@ -27,7 +29,9 @@ export class Store {
   }
 
   static async open() {
-    return new Store(await loadRaw());
+    const store = new Store(await loadRaw());
+    applySettings(store.data.settings);
+    return store;
   }
 
   async save() {

@@ -205,6 +205,10 @@ details[open] summary { margin-bottom: 8px; }
 .copy { display: flex; gap: 6px; } .copy input { flex: 1; font-size: .8rem; font-family: ui-monospace, monospace; }
 .code-big { font-size: 1.8rem; font-weight: 700; letter-spacing: .2em; font-variant-numeric: tabular-nums; text-align: center; background: var(--primary-soft); color: var(--primary); border-radius: 12px; padding: 10px; margin: 8px 0; }
 #account-card { margin-top: 16px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: .84rem; font-weight: 600; color: var(--muted); }
+.field input { width: 100%; font-weight: 400; color: var(--text); }
+#keys-form details summary { font-weight: 600; color: var(--muted); }
+#keys-form details[open] summary { margin-bottom: 8px; }
 #password-form input { min-width: 160px; }
 
 /* ---------- Đăng nhập ---------- */

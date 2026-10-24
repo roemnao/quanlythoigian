@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { waitUntil } from '@vercel/functions';
 import { Store, newId } from './db.js';
-import { DEFAULT_MODEL, extractItems, geminiConfigured } from './gemini.js';
+import { DEFAULT_MODEL, checkGemini, extractItems, geminiConfigured } from './gemini.js';
+import { cfg, cfgSource, mask } from './config.js';
 import { syncSources } from './sources.js';
 import { runCron } from './cron.js';
 import { storageKind } from './storage.js';
@@ -48,14 +49,15 @@ async function mutate(fn) {
 // ----- Các đường dẫn không cần đăng nhập -----
 
 // Webhook Zalo: xác thực bằng header bí mật riêng.
-app.post('/api/zalo/webhook', (req, res) => {
+app.post('/api/zalo/webhook', wrap(async (req, res) => {
+  await Store.open(); // nạp token Zalo nhập trên web (nếu có)
   const secret = webhookSecret();
   if (!secret || !safeEqual(req.get('X-Bot-Api-Secret-Token') || '', secret)) return res.sendStatus(403);
   // Trả lời Zalo ngay, xử lý tiếp ở nền (Vercel giữ hàm chạy nhờ waitUntil).
   const job = handleUpdate(req.body).catch((err) => console.warn('[zalo] webhook:', err.message));
   waitUntil(job);
   res.json({ ok: true });
-});
+}));
 
 // Cron: Vercel Cron gửi "Authorization: Bearer <CRON_SECRET>"; cron-job.org có thể dùng ?key=
 app.get('/api/cron', wrap(async (req, res) => {
@@ -182,7 +184,10 @@ app.get('/api/state', wrap(async (req, res) => {
     pomodoros: d.pomodoros.filter((p) => Date.now() - new Date(p.at) < 30 * 24 * 3600 * 1000),
     config: {
       gemini: geminiConfigured(),
-      geminiModel: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+      geminiModel: cfg('GEMINI_MODEL') || DEFAULT_MODEL,
+      keys: Object.fromEntries(['GEMINI_API_KEY', 'ZALO_BOT_TOKEN', 'GEMINI_MODEL'].map((k) => [k, {
+        source: cfgSource(k), masked: k === 'GEMINI_MODEL' ? cfg(k) : mask(cfg(k)),
+      }])),
       zalo: zaloConfigured(),
       zaloMode: isVercel ? 'webhook' : process.env.ZALO_MODE || 'polling',
       zaloOwner: ownerChatId(store) ? { name: d.meta.zaloName || null, fromEnv: Boolean(process.env.ZALO_CHAT_ID) } : null,
@@ -302,6 +307,44 @@ app.post('/api/sources/:id/sync', wrap(async (req, res) => {
   const results = await syncSources(Store.open, { ids: [req.params.id] });
   if (!results[req.params.id]) throw fail(404, 'Không tìm thấy nguồn');
   res.json(results[req.params.id]);
+}));
+
+// ----- Khoá API nhập trên web -----
+// Gửi chuỗi rỗng để xoá (quay về dùng biến môi trường nếu có); bỏ qua trường không gửi.
+app.put('/api/settings/keys', wrap(async (req, res) => {
+  const body = req.body || {};
+  const fields = { geminiApiKey: 'GEMINI_API_KEY', zaloBotToken: 'ZALO_BOT_TOKEN', geminiModel: 'GEMINI_MODEL' };
+  const store = await Store.open();
+  const settings = { ...store.data.settings };
+  const changed = [];
+  for (const [field, name] of Object.entries(fields)) {
+    if (!(field in body)) continue;
+    const value = String(body[field] ?? '').trim();
+    if (/\s/.test(value)) throw fail(400, `${name} không được chứa khoảng trắng`);
+    if (value) settings[field] = value; else delete settings[field];
+    changed.push(field);
+  }
+  store.data.settings = settings;
+  await store.save();
+  await Store.open(); // áp dụng giá trị mới
+
+  // Kiểm tra ngay để báo cho người dùng key có dùng được không.
+  const result = { saved: changed };
+  if (changed.includes('geminiApiKey') || changed.includes('geminiModel')) result.gemini = await checkGemini();
+  if (changed.includes('zaloBotToken') && zaloConfigured()) {
+    try {
+      const me = await getMe();
+      result.zalo = { ok: true, name: me?.display_name || me?.account_name || me?.name || null };
+      // Token mới → đăng ký lại webhook (chuỗi bí mật sinh từ token) khi chạy trên https.
+      const base = `${req.protocol}://${req.get('host')}`;
+      if (isVercel || (process.env.ZALO_MODE === 'webhook' && base.startsWith('https://'))) {
+        try { await setWebhook(`${base}/api/zalo/webhook`); result.zalo.webhook = true; } catch (err) { result.zalo.webhookError = err.message; }
+      }
+    } catch (err) {
+      result.zalo = { ok: false, error: err.message };
+    }
+  }
+  res.json(result);
 }));
 
 // ----- Zalo -----

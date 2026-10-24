@@ -4,18 +4,19 @@ import crypto from 'node:crypto';
 import { Store } from './db.js';
 import { extractItems, geminiConfigured } from './gemini.js';
 import { dayKey, fmtDateTime, fmtTime } from './time.js';
+import { cfg } from './config.js';
 
 const MAX_LEN = 1900; // Zalo giới hạn độ dài tin nhắn, chia nhỏ cho an toàn.
 
 export function zaloConfigured() {
-  return Boolean(process.env.ZALO_BOT_TOKEN);
+  return Boolean(cfg('ZALO_BOT_TOKEN'));
 }
 
 // Chuỗi bí mật xác thực webhook. Không đặt ZALO_WEBHOOK_SECRET thì tự sinh từ token.
 export function webhookSecret() {
   if (process.env.ZALO_WEBHOOK_SECRET) return process.env.ZALO_WEBHOOK_SECRET;
-  if (!process.env.ZALO_BOT_TOKEN) return null;
-  return crypto.createHash('sha256').update(`zalo-webhook:${process.env.ZALO_BOT_TOKEN}`).digest('hex').slice(0, 40);
+  if (!cfg('ZALO_BOT_TOKEN')) return null;
+  return crypto.createHash('sha256').update(`zalo-webhook:${cfg('ZALO_BOT_TOKEN')}`).digest('hex').slice(0, 40);
 }
 
 // Cuộc trò chuyện nhận nhắc việc: ZALO_CHAT_ID trong .env, hoặc người đã /ketnoi.
@@ -25,7 +26,7 @@ export function ownerChatId(store) {
 
 async function call(method, body, fetchImpl = fetch) {
   const base = (process.env.ZALO_API_BASE || 'https://bot-api.zapps.me').replace(/\/$/, '');
-  const res = await fetchImpl(`${base}/bot${process.env.ZALO_BOT_TOKEN}/${method}`, {
+  const res = await fetchImpl(`${base}/bot${cfg('ZALO_BOT_TOKEN')}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body || {}),

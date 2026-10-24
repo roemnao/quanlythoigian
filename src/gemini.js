@@ -1,5 +1,6 @@
 // Gọi Gemini API (Google AI Studio) để trích lịch trình / việc cần làm từ văn bản tự do.
 import { nowContext, TZ } from './time.js';
+import { cfg } from './config.js';
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 // Model nhanh, gói miễn phí dùng được; đổi bằng biến GEMINI_MODEL.
@@ -43,13 +44,28 @@ function instruction() {
 }
 
 export function geminiConfigured() {
-  return Boolean(process.env.GEMINI_API_KEY);
+  return Boolean(cfg('GEMINI_API_KEY'));
+}
+
+// Kiểm tra key + model có dùng được không (gọi API thông tin model, không tốn lượt sinh nội dung).
+export async function checkGemini({ fetchImpl = fetch } = {}) {
+  const key = cfg('GEMINI_API_KEY');
+  if (!key) return { ok: false, error: 'Chưa có key' };
+  const model = cfg('GEMINI_MODEL') || DEFAULT_MODEL;
+  try {
+    const res = await fetchImpl(`${ENDPOINT}/${encodeURIComponent(model)}`, { headers: { 'x-goog-api-key': key } });
+    if (res.ok) return { ok: true, model };
+    const data = await res.json().catch(() => ({}));
+    return { ok: false, error: data.error?.message || `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 export async function extractItems(text, { fetchImpl = fetch } = {}) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('Chưa cấu hình GEMINI_API_KEY trong file .env');
-  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
+  const key = cfg('GEMINI_API_KEY');
+  if (!key) throw new Error('Chưa có key Gemini: nhập ở Cài đặt → Khoá API');
+  const model = cfg('GEMINI_MODEL') || DEFAULT_MODEL;
   const res = await fetchImpl(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },

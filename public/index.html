@@ -235,6 +235,23 @@
 
       <!-- CÀI ĐẶT -->
       <section class="view" data-view="settings">
+        <form id="keys-form" class="card" autocomplete="off">
+          <div class="card-head"><h2><svg class="i"><use href="#i-settings"/></svg> Khoá API</h2></div>
+          <p class="small muted">Dán key vào ô rồi bấm Lưu. Key được lưu trong cơ sở dữ liệu của bạn, web chỉ hiện vài ký tự đầu/cuối. Để trống ô nào thì giữ nguyên key cũ.</p>
+          <label class="field">Key Gemini <span class="small muted" id="key-gemini-now"></span>
+            <input name="geminiApiKey" type="password" placeholder="Dán key từ aistudio.google.com/apikey" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="field">Token bot Zalo <span class="small muted" id="key-zalo-now"></span>
+            <input name="zaloBotToken" type="password" placeholder="Dán token từ Zalo Bot Manager" autocomplete="off" spellcheck="false">
+          </label>
+          <details class="small">
+            <summary>Tuỳ chọn nâng cao</summary>
+            <label class="field">Model Gemini <span class="small muted" id="key-model-now"></span>
+              <input name="geminiModel" placeholder="gemini-3.1-flash-lite" autocomplete="off" spellcheck="false">
+            </label>
+          </details>
+          <div class="row"><button class="btn primary" id="keys-save">Lưu &amp; kiểm tra</button><span id="keys-msg" class="small"></span></div>
+        </form>
         <div class="settings">
           <div class="card">
             <div class="card-head"><h2>Trạng thái</h2></div>
