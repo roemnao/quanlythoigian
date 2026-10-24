@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quản lý thời gian</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>⏳ Quản lý thời gian</h1>
+    <nav id="tabs">
+      <button data-tab="today" class="active">Hôm nay</button>
+      <button data-tab="calendar">Lịch</button>
+      <button data-tab="tasks">Việc</button>
+      <button data-tab="inbox">Đề xuất <span id="inbox-count" class="badge" hidden></span></button>
+      <button data-tab="sources">Nguồn &amp; Bot</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- HÔM NAY -->
+    <section id="tab-today" class="tab active">
+      <div class="grid2">
+        <div class="card">
+          <h2>🍅 Pomodoro</h2>
+          <div class="pomo">
+            <div id="pomo-mode" class="muted">Tập trung</div>
+            <div id="pomo-time" class="pomo-time">25:00</div>
+            <div class="row center">
+              <button id="pomo-start" class="primary">Bắt đầu</button>
+              <button id="pomo-reset">Đặt lại</button>
+            </div>
+            <div class="row center small">
+              <label>Làm <input id="pomo-work" type="number" min="1" max="120" value="25"> phút</label>
+              <label>Nghỉ <input id="pomo-break" type="number" min="1" max="60" value="5"> phút</label>
+            </div>
+            <label class="small">Đang làm:
+              <select id="pomo-task"><option value="">(không chọn)</option></select>
+            </label>
+            <p class="muted small">Hôm nay: <b id="pomo-today">0</b> phiên · 7 ngày: <b id="pomo-week">0</b> phiên</p>
+            <div id="pomo-chart" class="bars"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>🎯 3 mục tiêu chính hôm nay</h2>
+          <ol class="goals">
+            <li><input class="goal" data-i="0" placeholder="Việc quan trọng nhất…"></li>
+            <li><input class="goal" data-i="1" placeholder="Việc thứ hai…"></li>
+            <li><input class="goal" data-i="2" placeholder="Việc thứ ba…"></li>
+          </ol>
+          <h2>📅 Lịch hôm nay</h2>
+          <ul id="today-events" class="list"></ul>
+          <h2>⏰ Đến hạn / quá hạn</h2>
+          <ul id="today-due" class="list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- LỊCH -->
+    <section id="tab-calendar" class="tab">
+      <div class="card">
+        <div class="row between">
+          <button id="week-prev">‹ Tuần trước</button>
+          <h2 id="week-title"></h2>
+          <button id="week-next">Tuần sau ›</button>
+        </div>
+        <div id="week" class="week"></div>
+      </div>
+      <form id="event-form" class="card form">
+        <h2>Thêm lịch</h2>
+        <input name="title" placeholder="Tiêu đề" required>
+        <label>Bắt đầu <input name="start" type="datetime-local" required></label>
+        <label>Kết thúc <input name="end" type="datetime-local"></label>
+        <input name="note" placeholder="Ghi chú (địa điểm, link…)">
+        <button class="primary">Thêm</button>
+      </form>
+    </section>
+
+    <!-- VIỆC -->
+    <section id="tab-tasks" class="tab">
+      <form id="task-form" class="card form row">
+        <input name="title" placeholder="Thêm việc mới…" required class="grow">
+        <select name="quadrant">
+          <option value="1">1 · Gấp & quan trọng</option>
+          <option value="2" selected>2 · Quan trọng</option>
+          <option value="3">3 · Gấp</option>
+          <option value="4">4 · Để sau</option>
+        </select>
+        <input name="deadline" type="datetime-local" title="Hạn chót">
+        <button class="primary">Thêm</button>
+      </form>
+      <div class="matrix">
+        <div class="card q q1"><h2>🔥 Làm ngay</h2><p class="muted small">Gấp & quan trọng</p><ul data-q="1" class="list"></ul></div>
+        <div class="card q q2"><h2>📌 Lên lịch</h2><p class="muted small">Quan trọng, chưa gấp</p><ul data-q="2" class="list"></ul></div>
+        <div class="card q q3"><h2>🤝 Nhờ / làm nhanh</h2><p class="muted small">Gấp, ít quan trọng</p><ul data-q="3" class="list"></ul></div>
+        <div class="card q q4"><h2>🗑️ Bỏ / để sau</h2><p class="muted small">Không gấp, không quan trọng</p><ul data-q="4" class="list"></ul></div>
+      </div>
+      <details class="card"><summary>Đã xong (<span id="done-count">0</span>)</summary><ul id="done-list" class="list"></ul></details>
+    </section>
+
+    <!-- ĐỀ XUẤT -->
+    <section id="tab-inbox" class="tab">
+      <form id="extract-form" class="card form">
+        <h2>✨ Dán nội dung để AI tạo lịch</h2>
+        <p class="muted small">Dán email, tin nhắn, thông báo… Gemini sẽ trích lịch hẹn & việc cần làm vào hàng chờ bên dưới để bạn duyệt.</p>
+        <textarea name="text" rows="6" placeholder="Ví dụ: Thứ 5 tuần sau 2h chiều họp nhóm ở phòng 301. Nộp báo cáo trước 17h thứ 6."></textarea>
+        <button class="primary" id="extract-btn">Phân tích</button>
+        <p id="extract-msg" class="small"></p>
+      </form>
+      <div class="card">
+        <div class="row between">
+          <h2>📥 Chờ duyệt</h2>
+          <button id="approve-all">Duyệt tất cả</button>
+        </div>
+        <ul id="suggestions" class="list"></ul>
+      </div>
+    </section>
+
+    <!-- NGUỒN & BOT -->
+    <section id="tab-sources" class="tab">
+      <form id="source-form" class="card form">
+        <h2>🔗 Thêm nguồn tự động</h2>
+        <select name="type">
+          <option value="ics">Lịch ICS / iCal (Google Calendar, Outlook, TKB…) → vào thẳng lịch</option>
+          <option value="web">Trang web (thông báo, lịch sự kiện…) → AI đọc, vào hàng chờ</option>
+        </select>
+        <input name="name" placeholder="Tên gợi nhớ (vd: Lịch học)">
+        <input name="url" placeholder="https://… hoặc webcal://…" required>
+        <button class="primary">Thêm & đồng bộ</button>
+        <p class="muted small">Google Calendar: Cài đặt lịch → "Địa chỉ bí mật ở định dạng iCal".</p>
+      </form>
+      <div class="card">
+        <div class="row between"><h2>Nguồn đã thêm</h2><button id="sync-all">Đồng bộ ngay</button></div>
+        <ul id="sources" class="list"></ul>
+      </div>
+      <div class="card">
+        <h2>🤖 Trạng thái</h2>
+        <ul id="status" class="list"></ul>
+        <div class="row">
+          <button id="zalo-test">Gửi tin thử qua Zalo</button>
+        </div>
+        <p class="muted small">Cấu hình khoá trong file <code>.env</code> trên server (xem <code>.env.example</code>). Nhắn <code>/id</code> cho bot Zalo để lấy ZALO_CHAT_ID.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

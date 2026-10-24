@@ -1,0 +1,20 @@
+{
+  "name": "quanlythoigian",
+  "version": "0.1.0",
+  "description": "Web quản lý thời gian: lịch trình, việc cần làm, Pomodoro, tự lấy lịch từ nguồn (ICS, web, văn bản) bằng Gemini và bot Zalo nhắc việc",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.1.0",
+    "node-ical": "^0.20.1"
+  }
+}
