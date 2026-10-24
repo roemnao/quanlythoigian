@@ -171,7 +171,7 @@ export async function handleUpdate(update) {
     reply = await handleText(store, chatId, text, { name: msg.from?.display_name, items });
     await store.save();
     // Lịch vừa duyệt qua Zalo → đưa lên Google Lịch luôn (nếu đã kết nối).
-    if (/^\/duyet/i.test(text)) pushGoogle(Store.open).catch((err) => console.warn('[google]', err.message));
+    if (/^\/duyet/i.test(text)) await pushGoogle(Store.open).catch((err) => console.warn('[google]', err.message));
   } catch (err) {
     reply = `⚠️ Lỗi: ${err.message}`;
   }
