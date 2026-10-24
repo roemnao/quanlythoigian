@@ -444,6 +444,12 @@ app.put('/api/settings/keys', wrap(async (req, res) => {
     if (!(field in body)) continue;
     const value = String(body[field] ?? '').trim();
     if (/\s/.test(value)) throw fail(400, `${name} không được chứa khoảng trắng`);
+    if (field === 'googleClientId' && value && !/^[\w-]+\.apps\.googleusercontent\.com$/.test(value)) {
+      throw fail(400, 'Google Client ID phải có dạng 1234…-abc….apps.googleusercontent.com (chép từ cột Client ID, không phải secret)');
+    }
+    if (field === 'googleClientSecret' && value && !/^GOCSPX-/.test(value) && value.includes('.apps.googleusercontent.com')) {
+      throw fail(400, 'Ô Client Secret đang chứa Client ID. Secret có dạng GOCSPX-…');
+    }
     if (value) settings[field] = value; else delete settings[field];
     changed.push(field);
   }
