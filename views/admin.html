@@ -8,7 +8,7 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/theme.css">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/admin/style.css">
 </head>
 <body>
   <!-- Bộ biểu tượng (dùng lại bằng <use href="#i-...">) -->
@@ -298,6 +298,12 @@
               <li>Chép <b>Client ID</b> và <b>Client secret</b> dán vào 2 ô bên dưới rồi bấm Lưu.</li>
             </ol>
             <div class="copy"><input id="google-redirect" readonly aria-label="Redirect URI"><button type="button" class="btn icon" data-copy="#google-redirect" aria-label="Sao chép"><svg class="i"><use href="#i-copy"/></svg></button></div>
+            <div id="google-app-box" hidden>
+              <p class="small">Web app chạy ở tên miền riêng (<b id="google-app-host"></b>): thêm cả hai dòng dưới vào Client. <b>Authorized JavaScript origins</b>:</p>
+              <div class="copy"><input id="google-app-origin" readonly aria-label="JavaScript origin của web app"><button type="button" class="btn icon" data-copy="#google-app-origin" aria-label="Sao chép"><svg class="i"><use href="#i-copy"/></svg></button></div>
+              <p class="small"><b>Authorized redirect URIs</b> (thêm dòng này, giữ dòng ở trên):</p>
+              <div class="copy"><input id="google-app-redirect" readonly aria-label="Redirect URI của web app"><button type="button" class="btn icon" data-copy="#google-app-redirect" aria-label="Sao chép"><svg class="i"><use href="#i-copy"/></svg></button></div>
+            </div>
             <label class="field">Google Client ID <span class="small muted" id="key-gid-now"></span>
               <input name="googleClientId" placeholder="….apps.googleusercontent.com" autocomplete="off" spellcheck="false">
             </label>
@@ -368,7 +374,7 @@
   </dialog>
 
   <div id="toast" role="status" hidden></div>
-  <script src="/system.js"></script>
-  <script src="/app.js"></script>
+  <script src="/admin/system.js"></script>
+  <script src="/admin/admin.js"></script>
 </body>
 </html>

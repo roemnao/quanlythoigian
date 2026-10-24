@@ -4,7 +4,8 @@
   "outputDirectory": "public",
   "functions": {
     "api/index.js": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "views/**"
     }
   },
   "rewrites": [
@@ -14,6 +15,26 @@
     },
     {
       "source": "/calendar.ics",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/app",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/app/",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/app/manifest.webmanifest",
       "destination": "/api/index"
     }
   ],

@@ -1,5 +1,7 @@
-// Kiểm thử đầu-cuối web app /app bằng trình duyệt thật (Playwright), Google giả lập hoàn toàn:
+// Kiểm thử đầu-cuối web app bằng trình duyệt thật (Playwright), Google giả lập hoàn toàn:
 // thư viện đăng nhập (GIS) trả token giả, Google Lịch giả ghi lại các lời gọi.
+// Chạy ở chế độ hai tên miền: web app ở http://app.localhost:<cổng>, trang quản trị ở http://localhost:<cổng>
+// (Chromium tự trỏ *.localhost về máy này).
 // Chạy: npm run test:e2e   (cần Playwright + Chromium; SHOTS_DIR=thư-mục để lưu ảnh chụp sáng/tối, máy tính/điện thoại)
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,6 +14,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qltg-e2e-'));
 process.env.DATA_FILE = path.join(dir, 'db.json');
 process.env.GOOGLE_CLIENT_ID = 'client-123.apps.googleusercontent.com';
 process.env.GOOGLE_CLIENT_SECRET = 'secret-xyz';
+process.env.APP_HOST = 'app.localhost';
 delete process.env.APP_PASSWORD;
 
 const { default: app } = await import('../../src/app.js');
@@ -21,7 +24,8 @@ const shots = process.env.SHOTS_DIR;
 if (shots) fs.mkdirSync(shots, { recursive: true });
 
 const server = app.listen(0);
-const base = `http://localhost:${server.address().port}`;
+const adminBase = `http://localhost:${server.address().port}`;
+const base = `http://app.localhost:${server.address().port}`;
 
 // Thành viên đã đăng nhập, đã liên kết Zalo.
 const { user } = await members.signInMember({ sub: 'g-1', email: 'an@gmail.com', name: 'Nguyễn Văn An' }, { acceptedTerms: members.TERMS_VERSION });
@@ -87,7 +91,7 @@ try {
   // Chưa đăng nhập: màn hình đăng nhập, nút bị khoá cho tới khi tick đồng ý điều khoản.
   for (const [theme, mobile] of [['dark', false], ['light', false], ['dark', true], ['light', true]]) {
     const { p, ctx, errors } = await page({ theme, mobile, signedIn: false });
-    await p.goto(`${base}/app/`);
+    await p.goto(`${base}/`);
     await p.getByText('Đăng nhập bằng Google').waitFor();
     assert.equal(await p.locator('html').getAttribute('data-theme'), theme);
     const btn = p.locator('a.google');
@@ -102,7 +106,7 @@ try {
 
   // Đã đăng nhập: kết nối Google Lịch → lệnh được ghi vào lịch.
   const { p, ctx, errors } = await page();
-  await p.goto(`${base}/app/`);
+  await p.goto(`${base}/`);
   await p.getByText('Zalo đã liên kết').waitFor();
   await p.getByText('Có 2 lịch mới đang chờ').waitFor();
   await snap(p, 'app-home-pending-dark-desktop');
@@ -135,7 +139,7 @@ try {
 
   for (const [theme, mobile] of [['light', false], ['dark', true], ['light', true]]) {
     const v = await page({ theme, mobile });
-    await v.p.goto(`${base}/app/`);
+    await v.p.goto(`${base}/`);
     await v.p.getByText('Zalo đã liên kết').waitFor();
     await snap(v.p, `app-home-${theme}-${mobile ? 'mobile' : 'desktop'}`);
     assert.deepEqual(v.errors, []);
@@ -143,6 +147,20 @@ try {
   }
 
   await ctx.close();
+
+  // Tên miền quản trị: trang đăng nhập quản trị; link /app/ cũ đưa sang web app; phiên thành viên không dùng được ở đây.
+  const adminView = await page({ signedIn: false });
+  await adminView.p.goto(`${adminBase}/`);
+  await adminView.p.locator('#nav button[data-view="system"]').waitFor({ state: 'attached' });
+  assert.match(await adminView.p.title(), /Quản trị/);
+  await snap(adminView.p, 'admin-host-login');
+  await adminView.p.goto(`${adminBase}/app/`);
+  assert.equal(new URL(adminView.p.url()).host, `app.localhost:${server.address().port}`);
+  const me = await adminView.p.request.get(`${adminBase}/api/me`, { headers: { Cookie: `qltg_member=${cookie}` } });
+  assert.equal(me.status(), 404);
+  // Trang đang ở tên miền app (vừa được chuyển sang): API quản trị không có ở đây.
+  assert.equal(await adminView.p.evaluate(() => fetch('/api/auth/status').then((r) => r.status)), 404);
+  await adminView.ctx.close();
   console.log('e2e: ok');
 } catch (err) {
   failed = true;
