@@ -21,13 +21,13 @@ Nhóm Zalo ─► PyloS (bộ lọc + agent): "giao lịch cho @A, @B"
 
 ## Tính năng
 
-**Web app cho thành viên** (`/app`, cài được lên màn hình điện thoại như ứng dụng):
+**Web app cho thành viên** (trang chủ của tên miền app riêng, xem mục *Tên miền* bên dưới; cài được lên màn hình điện thoại như ứng dụng):
 - Đăng nhập Gmail (phải đồng ý Điều khoản dịch vụ và Chính sách quyền riêng tư; khi điều khoản đổi phiên bản, app hỏi đồng ý lại).
 - Liên kết Zalo: lấy mã 6 số (10 phút, dùng một lần, tối đa 5 mã/giờ), nhắn riêng mã đó cho acc bot.
 - Kết nối Google Lịch, tự lấy lệnh mỗi phút khi app đang mở và ghi thêm / sửa / xoá vào lịch chính. Mỗi lịch có ID cố định nên chạy lại không bị trùng.
 - Lịch sử các lệnh đã nhận, chỉ lưu trên máy đó. Gỡ liên kết Zalo, đăng xuất, xoá tài khoản ngay trong app.
 
-**Trang quản trị cho chủ hệ thống** (`/`), mục **Hệ thống**:
+**Trang quản trị cho chủ hệ thống** (tên miền quản trị), mục **Hệ thống**:
 - **Thành viên:** link web app để gửi cho mọi người, danh sách thành viên (Zalo đã liên kết chưa, lần cuối app hỏi lệnh), gỡ Zalo, xoá tài khoản, giới hạn email / tên miền được tạo tài khoản, link mở chat với bot.
 - **Nhật ký bot lịch:** mỗi lệnh thêm / sửa / xoá: lúc nào, nhóm nào, ai giao, ai nhận, ai chưa liên kết, và lúc app của từng người lấy lệnh về. Lọc theo ngày và người, tải CSV. Giữ 90 ngày.
 - **Cấu hình bot:** model của agent, model của bộ lọc, bật/tắt bộ lọc AI, tên gọi bot, giới hạn, ai được giao lịch, SYSTEM.md / MEMORY.md… Bot áp trong vòng một phút, không cần khởi động lại. Kèm trạng thái bot (nhịp tim, phiên bản, token hôm nay, lỗi gần nhất).
@@ -50,10 +50,26 @@ Phần quản lý thời gian của chủ web vẫn như trước: Tổng quan, 
 3. **Thêm nơi lưu dữ liệu (bắt buộc, miễn phí):** trong project, vào tab **Storage**, chọn **Create Database**, chọn **Upstash for Redis** (gói Free), rồi **Connect** vào project. Sau đó vào tab **Deployments**, bấm **⋯** ở bản mới nhất và chọn **Redeploy**.
    > Tài khoản thành viên, hàng lệnh, log bot lịch và session đều nằm trong Upstash. Không có bước này, dữ liệu mất mỗi khi Vercel khởi động lại.
 4. **Tạo tài khoản quản trị:** mở web, nhập tên đăng nhập và mật khẩu ở màn hình **Chào mừng**. Người tạo đầu tiên là chủ web.
-5. **Kết nối Google** (mục dưới) để có đăng nhập Gmail và web app.
-6. **Nối bot Zalo PyloS** (mục dưới) để giao lịch trong nhóm.
+5. **Tách tên miền cho web app** (mục dưới), để người dùng chỉ thấy app, còn trang quản trị ở tên miền khác.
+6. **Kết nối Google** (mục dưới) để có đăng nhập Gmail và web app.
+7. **Nối bot Zalo PyloS** (mục dưới) để giao lịch trong nhóm.
 
 Mỗi lần có code mới trên nhánh chính, Vercel tự deploy lại.
+
+## 🌐 Tên miền: app người dùng và trang quản trị
+Một project Vercel phục vụ hai tên miền: **tên miền app** cho mọi người (web app ở trang chủ) và **tên miền quản trị** cho bạn. Hai bên dùng chung database và code, nhưng:
+- Tên miền app chỉ có web app và API của thành viên. Trang quản trị, API quản trị, đăng nhập quản trị không có ở đây.
+- Tên miền quản trị không có API của thành viên; link `/app/` cũ tự chuyển sang tên miền app.
+- Bot Zalo (`/api/agent/…`), webhook Zalo, cron dùng được ở cả hai.
+- Mỗi tên miền có cookie đăng nhập riêng.
+
+Cách bật (gợi ý: giữ `quanlythoigian-azure.vercel.app` cho quản trị, nên không phải đăng ký lại webhook Zalo, cron-job, Google hay địa chỉ trong PyloS):
+1. Vercel → project → **Settings → Domains** → **Add** tên miền cho app, ví dụ `iforgotmywayhome.vercel.app` (tên `*.vercel.app` miễn phí nếu còn trống; dùng tên miền riêng của bạn cũng được).
+2. **Settings → Environment Variables** → thêm `APP_HOST` = tên miền đó (vd `iforgotmywayhome.vercel.app`) → **Deployments → Redeploy**.
+3. Google Cloud → Client: thêm **Authorized JavaScript origin** `https://<tên miền app>` và **Authorized redirect URI** `https://<tên miền app>/api/google/callback` (giữ redirect URI của tên miền quản trị). Hai dòng này có sẵn để sao chép ở trang quản trị → Cài đặt → Khoá API → Google.
+4. Gửi mọi người link `https://<tên miền app>/` (có ở Hệ thống → Thành viên). Bạn vẫn vào trang quản trị ở tên miền quản trị.
+
+Chưa đặt `APP_HOST` thì dùng chung một tên miền: trang quản trị ở `/`, web app ở `/app/`.
 
 ## 🔑 Google: đăng nhập Gmail và Google Lịch
 Cần một OAuth Client miễn phí của Google:
@@ -64,14 +80,14 @@ Cần một OAuth Client miễn phí của Google:
    - Quyền `calendar.events` là quyền nhạy cảm. Khi chưa gửi Google xác minh, ứng dụng tối đa **100 test user**: thêm Gmail của từng thành viên vào danh sách *Test users*. Khi đăng nhập, Google có thể cảnh báo "ứng dụng chưa được xác minh": bấm **Nâng cao** rồi **Tiếp tục**.
    - Muốn mở cho nhiều người hơn, bấm **Publish app** và gửi Google xác minh.
 5. Mục **Clients → Create client**, loại **Web application**:
-   - **Authorized JavaScript origins:** `https://<tên-web>.vercel.app` (web app ghi Google Lịch ngay trong trình duyệt nên cần dòng này).
-   - **Authorized redirect URIs:** `https://<tên-web>.vercel.app/api/google/callback` (có sẵn trong Cài đặt → Khoá API → Google để sao chép).
+   - **Authorized JavaScript origins:** địa chỉ của web app, vd `https://<tên miền app>` (web app ghi Google Lịch ngay trong trình duyệt nên cần dòng này).
+   - **Authorized redirect URIs:** `https://<tên miền quản trị>/api/google/callback`, và nếu đã tách tên miền thì thêm `https://<tên miền app>/api/google/callback`. Các dòng này có sẵn trong Cài đặt → Khoá API → Google để sao chép.
 6. Dán **Client ID** và **Client secret** vào **Cài đặt → Khoá API → Google**, rồi bấm Lưu.
 
 Chủ web vẫn dùng được các tính năng cũ: đăng nhập trang quản trị bằng Google, đồng bộ 2 chiều với Google Lịch của chính mình (Cài đặt → Google Lịch).
 
 ## 👥 Mời mọi người dùng web app
-1. Trang quản trị → **Hệ thống → Thành viên**: điền **tên bot trên Zalo** và **link mở chat với bot** (`https://zalo.me/<số điện thoại acc bot>`), rồi chép link web app `https://<tên-web>.vercel.app/app/` gửi cho mọi người. Muốn giới hạn ai được tạo tài khoản, điền danh sách email hoặc tên miền (`an@gmail.com, @congty.vn`).
+1. Trang quản trị → **Hệ thống → Thành viên**: điền **tên bot trên Zalo** và **link mở chat với bot** (`https://zalo.me/<số điện thoại acc bot>`), rồi chép link web app (vd `https://iforgotmywayhome.vercel.app/`) gửi cho mọi người. Muốn giới hạn ai được tạo tài khoản, điền danh sách email hoặc tên miền (`an@gmail.com, @congty.vn`).
 2. Mỗi người mở link, tick đồng ý điều khoản, **Đăng nhập bằng Google**.
 3. Bấm **Lấy mã liên kết**, nhắn riêng 6 số đó cho acc bot trên Zalo. App tự nhận ra khi đã liên kết.
 4. Bấm **Kết nối Google Lịch**.
@@ -85,7 +101,7 @@ Lưu ý:
 1. Trang quản trị → **Cài đặt → Kết nối AI agent → Tạo khoá cho agent**, chép khoá.
 2. Trên máy chạy PyloS, điền vào `userdata/config/settings.env` (hoặc giao diện quản lý của PyloS):
    ```
-   SCHEDULE_API_URL=https://<tên-web>.vercel.app
+   SCHEDULE_API_URL=https://<tên miền quản trị>
    SCHEDULE_API_KEY=<khoá vừa tạo>
    ```
 3. Khởi động lại bot. Trang **Hệ thống → Cấu hình bot** hiện *Đang chạy* sau khoảng một phút.
@@ -123,7 +139,8 @@ Cần Node.js ≥ 20.12.
 ```bash
 npm install
 cp .env.example .env     # điền GEMINI_API_KEY, ZALO_BOT_TOKEN
-npm start                # mở http://localhost:3000 (web app: http://localhost:3000/app/)
+npm start                # quản trị: http://localhost:3000, web app: http://localhost:3000/app/
+                         # thử hai tên miền: đặt APP_HOST=app.localhost, web app ở http://app.localhost:3000
 npm test                 # kiểm thử
 npm run test:e2e         # kiểm thử web app bằng trình duyệt thật (cần Playwright + Chromium), Google giả lập
 ```
@@ -144,13 +161,14 @@ Trên máy, dữ liệu lưu ở `data/db.json` và `data/kv.json`. Bot Zalo nh�
 | `SYNC_INTERVAL_MINUTES` | Khoảng cách giữa các lần đồng bộ nguồn | 30 |
 | `REMIND_BEFORE_MINUTES` | Nhắc trước sự kiện bao nhiêu phút | 15 |
 | `DAILY_SUMMARY_HOUR` | Giờ gửi tóm tắt (để trống để tắt) | 7 |
+| `APP_HOST` | Tên miền riêng của web app (vd `iforgotmywayhome.vercel.app`); mọi tên miền khác là trang quản trị | trống: dùng chung một tên miền |
 | `KV_PREFIX` | Tiền tố khoá trong Redis (khi nhiều web dùng chung một Upstash) | `qltg:` |
 
 ## Cấu trúc
 ```
 api/index.js         điểm vào trên Vercel
 server.js            chạy trên máy (polling Zalo + cron mỗi phút)
-src/app.js           API Express: quản trị, thành viên (/api/me), agent (/api/agent), Google
+src/app.js           API Express: quản trị, thành viên (/api/me), agent (/api/agent), Google; chọn trang theo tên miền
 src/kv.js            kho khoá–giá trị (Upstash Redis hoặc file JSON) cho dữ liệu nhiều người
 src/members.js       thành viên: đăng nhập Gmail, điều khoản, mã liên kết Zalo, hàng lệnh một chiều
 src/calbot.js        bot lịch: giao / sửa / huỷ lịch cho người được tag
@@ -161,9 +179,10 @@ src/google.js        đăng nhập Google, đồng bộ Google Lịch của ch�
 src/db.js            dữ liệu của chủ web (lịch, việc, đề xuất…)
 src/storage.js       Upstash Redis (REST, pipeline) hoặc file JSON
 src/gemini.js, sources.js, zalo.js, cron.js, time.js, config.js
+views/admin.html     trang quản trị; views/app.html: web app (gửi từ Express để chọn đúng theo tên miền)
 public/theme.css     giao diện chung iforgotmywayhome (+ theme.js: sáng/tối, fonts/: font tự lưu)
-public/index.html    trang quản trị (app.js, system.js: mục Hệ thống, style.css)
-public/app/          web app thành viên (PWA): index.html, app.js, sync.js (ghi Google Lịch), sw.js
+public/admin/        JS, CSS của trang quản trị (admin.js, system.js: mục Hệ thống, style.css)
+public/app/          JS, CSS, biểu tượng của web app (app.js, sync.js: ghi Google Lịch); public/sw.js: chạy offline
 public/terms.html, privacy.html   điều khoản, chính sách (bản mẫu)
 test/                kiểm thử: npm test; test/e2e: npm run test:e2e
 ```

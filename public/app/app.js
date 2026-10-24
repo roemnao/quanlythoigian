@@ -4,6 +4,8 @@
 import { applyAll } from './sync.js';
 
 const POLL_MS = 60_000;
+// "/" khi web app có tên miền riêng, "/app/" khi dùng chung tên miền với trang quản trị.
+const APP_BASE = location.pathname.startsWith('/app') ? '/app/' : '/';
 const SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const HISTORY_MAX = 200;
 
@@ -143,7 +145,7 @@ async function applyPending() {
   if (!st.pending.length || !tokenValid()) return;
   const r = await applyAll(st.pending, {
     token: st.token.value,
-    appUrl: `${location.origin}/app/`,
+    appUrl: `${location.origin}${APP_BASE}`,
     onResult: (cmd, result) => {
       addHistory(cmd, result);
       st.pending = st.pending.filter((c) => c.seq !== cmd.seq);
@@ -413,5 +415,5 @@ if (qs.has('google') || qs.has('google_error')) {
   history.replaceState(null, '', location.pathname);
   setTimeout(() => toast(err ? `⚠️ ${err}` : qs.get('google') === 'member-new' ? 'Đã tạo tài khoản. Tiếp theo: liên kết Zalo.' : 'Đã đăng nhập', 6000), 300);
 }
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' }).catch(() => {});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: APP_BASE }).catch(() => {});
 boot();

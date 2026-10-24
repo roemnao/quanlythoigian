@@ -633,6 +633,13 @@ function renderSettings() {
   $('#key-gid-now').textContent = gNow(g.clientId);
   $('#key-gsecret-now').textContent = gNow(g.clientSecret);
   $('#google-redirect').value = g.redirectUri;
+  // Web app ở tên miền riêng (APP_HOST): Google cần thêm origin và redirect URI của tên miền đó.
+  $('#google-app-box').hidden = !c.app?.separate;
+  if (c.app?.separate) {
+    $('#google-app-host').textContent = c.app.host;
+    $('#google-app-origin').value = c.app.origin;
+    $('#google-app-redirect').value = c.app.redirectUri;
+  }
   if (!g.configured && !renderSettings.openedGoogle) { $('#google-keys').open = true; renderSettings.openedGoogle = true; }
   renderGoogle(c);
   $('#key-model-now').textContent = c.keys?.GEMINI_MODEL?.source ? `(đang dùng: ${c.geminiModel})` : `(mặc định: ${c.geminiModel})`;

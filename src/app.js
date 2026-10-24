@@ -40,6 +40,25 @@ export const app = express();
 app.set('trust proxy', true);
 app.use(express.json({ limit: '1mb' }));
 
+// ----- Hai tên miền: web app người dùng ở APP_HOST, trang quản trị ở mọi tên miền khác -----
+// Chưa đặt APP_HOST: một tên miền cho tất cả (quản trị ở /, web app ở /app/).
+const APP_HOST = String(process.env.APP_HOST || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/:].*$/, '');
+const separateHosts = Boolean(APP_HOST);
+const onAppHost = (req) => separateHosts && req.hostname.toLowerCase() === APP_HOST;
+// Đường dẫn của web app trên tên miền đang mở: "/" ở tên miền app, "/app/" khi dùng chung một tên miền.
+const appBase = (req) => (onAppHost(req) ? '/' : '/app/');
+const isMemberApi = (p) => p === '/api/me' || p.startsWith('/api/me/');
+// Bot Zalo và dịch vụ ngoài (có khoá riêng) gọi được ở cả hai tên miền.
+const isSharedApi = (p) => p.startsWith('/api/agent/') || p === '/api/zalo/webhook' || p === '/api/cron';
+app.use((req, res, next) => {
+  const p = req.path;
+  if (!separateHosts || (!p.startsWith('/api/') && p !== '/calendar.ics') || isSharedApi(p)) return next();
+  // Tên miền app chỉ có API của thành viên (và đăng nhập Google); tên miền quản trị không có API của thành viên.
+  const allowed = onAppHost(req) ? isMemberApi(p) || p === '/api/google/start' || p === '/api/google/callback' : !isMemberApi(p);
+  if (allowed) return next();
+  res.status(404).json({ error: 'Không có API này' });
+});
+
 const safeEqual = (a, b) => {
   const x = Buffer.from(String(a)); const y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
@@ -167,7 +186,14 @@ app.patch('/api/agent/tasks/:id', wrap(async (req, res) => {
 }));
 // ----- Bot lịch: agent giao lịch cho người được tag, liên kết Zalo, nhận cấu hình, gửi nhịp tim và session -----
 const maskEmail = (e) => String(e || '').replace(/^(.{2})[^@]*(@.*)$/, '$1…$2');
-const appUrl = (req) => `${baseUrl(req)}/app/`;
+// Địa chỉ gốc của tên miền app, giữ giao thức và cổng của yêu cầu hiện tại (https trên Vercel, http://app.localhost:3000 khi thử trên máy).
+function appOrigin(req) {
+  const url = new URL(baseUrl(req));
+  url.hostname = APP_HOST;
+  return url.origin;
+}
+// Link web app gửi cho mọi người (hiện ở trang Thành viên, bot gửi cho người chưa liên kết).
+const appUrl = (req) => (separateHosts ? `${appOrigin(req)}/` : `${baseUrl(req)}/app/`);
 
 // Người dùng nhắn mã 6 số cho bot → agent chuyển sang đây cùng ID Zalo của người gửi.
 app.post('/api/agent/zalo-link', wrap(async (req, res) => {
@@ -358,8 +384,8 @@ const PURPOSES = ['login', 'setup', 'link', 'calendar', 'member'];
 const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 const redirectUri = (req) => `${baseUrl(req)}/api/google/callback`;
 const backTo = (res, params) => res.redirect(`/?${new URLSearchParams(params)}`);
-// Thành viên đăng nhập từ web app thì quay về /app/.
-const backToApp = (res, params) => res.redirect(`/app/?${new URLSearchParams(params)}`);
+// Thành viên đăng nhập từ web app thì quay về web app ("/" ở tên miền app, "/app/" khi dùng chung tên miền).
+const backToApp = (res, params) => res.redirect(`${appBase(res.req)}?${new URLSearchParams(params)}`);
 
 // Tên đăng nhập gợi ý từ email: phần trước @, chỉ giữ ký tự hợp lệ.
 function usernameFromEmail(email) {
@@ -370,6 +396,11 @@ function usernameFromEmail(email) {
 app.get('/api/google/start', wrap(async (req, res) => {
   const purpose = String(req.query.purpose || '');
   if (!PURPOSES.includes(purpose)) throw fail(400, 'Mục đích không hợp lệ');
+  if (separateHosts) {
+    // Thành viên đăng nhập ở tên miền app (cookie nằm ở đó); quản trị chỉ đăng nhập ở tên miền quản trị.
+    if (purpose === 'member' && !onAppHost(req)) return res.redirect(`${appOrigin(req)}${req.originalUrl}`);
+    if (purpose !== 'member' && onAppHost(req)) throw fail(404, 'Không có API này');
+  }
   const store = await Store.open();
   const back = purpose === 'member' ? backToApp : backTo;
   if (!googleConfigured()) return back(res, { google_error: purpose === 'member' ? 'Chủ hệ thống chưa cấu hình đăng nhập Google' : 'Chưa nhập Google Client ID/Secret ở Cài đặt → Khoá API' });
@@ -394,7 +425,8 @@ app.get('/api/google/callback', wrap(async (req, res) => {
   res.clearCookie(TERMS_COOKIE, { path: '/api/google' });
   const back = purpose === 'member' ? backToApp : backTo;
   if (req.query.error) return back(res, { google_error: req.query.error === 'access_denied' ? 'Bạn đã huỷ đăng nhập Google' : String(req.query.error) });
-  if (!PURPOSES.includes(purpose) || !nonce || !expected || !safeEqual(nonce, expected)) {
+  if (!PURPOSES.includes(purpose) || !nonce || !expected || !safeEqual(nonce, expected)
+    || (separateHosts && (purpose === 'member') !== onAppHost(req))) {
     return back(res, { google_error: 'Phiên đăng nhập Google không hợp lệ, hãy thử lại' });
   }
   try {
@@ -572,6 +604,9 @@ app.get('/api/state', wrap(async (req, res) => {
       zaloMode: isVercel ? 'webhook' : process.env.ZALO_MODE || 'polling',
       zaloReceiver: zaloReceiver(store),
       agent: { enabled: Boolean(d.settings?.agentTokenHash), createdAt: d.settings?.agentTokenAt || null, base: `${base}/api/agent` },
+      app: separateHosts
+        ? { separate: true, host: APP_HOST, url: appUrl(req), origin: appOrigin(req), redirectUri: `${appOrigin(req)}/api/google/callback` }
+        : { separate: false, url: appUrl(req) },
       zaloOwner: ownerChatId(store) ? { name: d.meta.zaloName || null, fromEnv: Boolean(process.env.ZALO_CHAT_ID) } : null,
       storage: storageKind(),
       vercel: isVercel,
@@ -906,7 +941,40 @@ app.get('/api/admin/sessions', wrap(async (req, res) => res.json(await readSessi
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Không có API này' }));
 
-// Giao diện tĩnh (trên Vercel thư mục public/ được phục vụ trực tiếp, đây là dự phòng).
+// ----- Trang: chọn trang quản trị hay web app theo tên miền (vì vậy HTML nằm ở views/, không phải file tĩnh) -----
+const sendPage = (res, name) => res.set('Cache-Control', 'no-cache').sendFile(path.join(root, 'views', name));
+const query = (req) => (req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '');
+app.get('/', (req, res) => sendPage(res, onAppHost(req) ? 'app.html' : 'admin.html'));
+// Chuyển hướng tạm thời (302): trình duyệt không nhớ mãi, nên đổi hay bỏ APP_HOST sau này vẫn đúng.
+app.get(['/app', '/app/'], (req, res) => {
+  if (separateHosts) return res.redirect(302, `${onAppHost(req) ? '' : appOrigin(req)}/${query(req)}`);
+  if (req.path === '/app') return res.redirect(302, `/app/${query(req)}`); // link tương đối trong trang cần dấu / ở cuối
+  sendPage(res, 'app.html');
+});
+// Manifest của web app: start_url / scope đúng chỗ app đang chạy, để cài lên màn hình điện thoại mở đúng app.
+app.get(['/manifest.webmanifest', '/app/manifest.webmanifest'], (req, res) => {
+  if (separateHosts && !onAppHost(req)) return res.status(404).end();
+  const base = appBase(req);
+  res.type('application/manifest+json').set('Cache-Control', 'no-cache').send(JSON.stringify({
+    name: 'iforgotmywayhome',
+    short_name: 'iforgotmywayhome',
+    description: 'Nhận lịch được giao trong nhóm Zalo và tự ghi vào Google Lịch của bạn',
+    lang: 'vi',
+    start_url: base,
+    scope: base,
+    display: 'standalone',
+    background_color: '#1d1f24',
+    theme_color: '#1d1f24',
+    icons: [
+      { src: '/app/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/app/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/app/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+    ],
+  }));
+});
+
+// File tĩnh: CSS, JS, font, ảnh (trên Vercel thư mục public/ được phục vụ trực tiếp, đây là dự phòng khi chạy trên máy).
 app.use(express.static(path.join(root, 'public')));
 
 export default app;
