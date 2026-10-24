@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1d1f24">
+  <meta name="description" content="Nhận lịch được giao trong nhóm Zalo và tự ghi vào Google Lịch của bạn">
+  <!-- Chỉ nói chuyện với máy chủ này và Google (đăng nhập + Google Lịch). Không có script nội tuyến. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src 'self' https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data: https://*.googleusercontent.com; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <title>iforgotmywayhome</title>
+  <link rel="manifest" href="/app/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/app/icon-192.png">
+  <meta name="apple-mobile-web-app-title" content="iforgotmywayhome">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/app/app.css">
+  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script type="module" src="/app/app.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-temple" viewBox="0 0 24 24"><path d="M3 9.5 12 4l9 5.5z"/><path d="M4 9.5h16M5.8 11.5v6.2M9.4 11.5v6.2M14.6 11.5v6.2M18.2 11.5v6.2M3.5 18.5h17M2 21h20"/></symbol>
+      <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="m3.5 6 8.5 7 8.5-7"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+      <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="1.5"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17 19 7"/></symbol>
+      <symbol id="i-arch" viewBox="0 0 24 24"><path d="M4 21V11a8 8 0 0 1 16 0v10M8 21v-9a4 4 0 0 1 8 0v9M2 21h20"/></symbol>
+      <symbol id="i-scroll" viewBox="0 0 24 24"><path d="M8 3h11a2 2 0 0 1 2 2v2h-4"/><path d="M17 5v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2h9v2a2 2 0 0 0 2 2"/><path d="M8 3a2 2 0 0 0-2 2v12M9.5 8h4.5M9.5 12h4.5"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+      <symbol id="i-google" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></symbol>
+    </defs>
+  </svg>
+
+  <div class="shell">
+    <header class="top">
+      <a class="brand" href="/app/"><svg class="temple i" aria-hidden="true"><use href="#i-temple"/></svg><span class="wordmark">iforgotmywayhome</span></a>
+      <button type="button" class="btn icon theme-toggle" data-theme-toggle aria-label="Sáng / tối"><svg class="i i-moon"><use href="#i-moon"/></svg><svg class="i i-sun"><use href="#i-sun"/></svg></button>
+    </header>
+    <div class="meander" aria-hidden="true"></div>
+    <main id="view" aria-live="polite">
+      <div class="card loading"><p class="muted">Đang mở…</p></div>
+    </main>
+    <footer class="foot">
+      <a href="/terms.html">Điều khoản dịch vụ</a>
+      <a href="/privacy.html">Chính sách quyền riêng tư</a>
+    </footer>
+  </div>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>

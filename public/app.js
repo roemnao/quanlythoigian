@@ -88,6 +88,7 @@ const VIEWS = {
   tasks: { title: 'Công việc', action: 'Thêm việc' },
   inbox: { title: 'Đề xuất', action: 'Dán nội dung' },
   sources: { title: 'Nguồn tự động', action: 'Thêm nguồn' },
+  system: { title: 'Hệ thống', action: null },
   settings: { title: 'Cài đặt', action: null },
 };
 function setView(name) {
@@ -100,6 +101,8 @@ function setView(name) {
   act.querySelector('span').textContent = VIEWS[view].action || '';
   try { localStorage.setItem('view', view); } catch {}
   window.scrollTo(0, 0);
+  // Hệ thống: tải khi mở (không tự làm mới theo chu kỳ để không mất phần đang sửa).
+  if (view === 'system' && !$('#app').hidden) renderSystem();
 }
 $$('#nav button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 $$('[data-goto]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.goto)));
@@ -112,8 +115,10 @@ $('#top-action').addEventListener('click', () => {
 
 async function load() {
   S = await api('GET', '/api/state');
+  const first = $('#app').hidden;
   showScreen('app');
   render();
+  if (first && view === 'system') renderSystem();
 }
 function render() {
   $('#today-label').textContent = new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -820,7 +825,7 @@ function pomoDraw() {
   const ring = $('#pomo-ring');
   ring.style.strokeDasharray = RING;
   ring.style.strokeDashoffset = RING * (1 - Math.max(0, pomo.left) / pomoLen());
-  document.title = pomo.running ? `${txt} · ${pomo.mode === 'work' ? 'Tập trung' : 'Nghỉ'}` : 'Quản lý thời gian';
+  document.title = pomo.running ? `${txt} · ${pomo.mode === 'work' ? 'Tập trung' : 'Nghỉ'}` : 'iforgotmywayhome · Quản trị';
 }
 function beep() {
   try {

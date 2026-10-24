@@ -3,10 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#4f5bd5">
-  <title>Quản lý thời gian</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏳</text></svg>">
-  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#1d1f24">
+  <title>iforgotmywayhome · Quản trị</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <!-- Bộ biểu tượng (dùng lại bằng <use href="#i-...">) -->
@@ -31,14 +33,24 @@
       <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
       <symbol id="i-google" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></symbol>
       <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-temple" viewBox="0 0 24 24"><path d="M3 9.5 12 4l9 5.5z"/><path d="M4 9.5h16M5.8 11.5v6.2M9.4 11.5v6.2M14.6 11.5v6.2M18.2 11.5v6.2M3.5 18.5h17M2 21h20"/></symbol>
+      <symbol id="i-column" viewBox="0 0 24 24"><path d="M5 3.5h14M6.5 6h11M8.5 6v12M12 6v12M15.5 6v12M6.5 18h11M5 20.5h14"/></symbol>
+      <symbol id="i-arch" viewBox="0 0 24 24"><path d="M4 21V11a8 8 0 0 1 16 0v10M8 21v-9a4 4 0 0 1 8 0v9M2 21h20"/></symbol>
+      <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></symbol>
+      <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 3 4.5 4.5 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.5 2.2-4.5.2 1.6 1 2.6 2.3 2.8-.4-3 .4-5.3 0-7.3z"/><path d="M8 21h8"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></symbol>
+      <symbol id="i-scroll" viewBox="0 0 24 24"><path d="M8 3h11a2 2 0 0 1 2 2v2h-4"/><path d="M17 5v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2h9v2a2 2 0 0 0 2 2"/><path d="M8 3a2 2 0 0 0-2 2v12M9.5 8h4.5M9.5 12h4.5"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 19h16"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
     </defs>
   </svg>
 
   <!-- Đăng nhập -->
   <div id="login" class="screen" hidden>
     <form id="login-form" class="login-card">
-      <div class="brand big"><span class="logo">⏳</span> Quản lý thời gian</div>
-      <p class="muted">Đăng nhập để tiếp tục</p>
+      <div class="brand big"><svg class="temple i" aria-hidden="true"><use href="#i-temple"/></svg><span class="wordmark">iforgotmywayhome</span></div>
+      <p class="muted">Trang quản trị · Đăng nhập để tiếp tục</p>
       <input name="username" placeholder="Tên đăng nhập" autocomplete="username" autocapitalize="none" spellcheck="false">
       <input name="password" type="password" placeholder="Mật khẩu" autocomplete="current-password" required>
       <button class="btn primary block">Đăng nhập</button>
@@ -47,13 +59,15 @@
         <a class="btn block google-btn" href="/api/google/start?purpose=login"><svg class="gicon" viewBox="0 0 48 48"><use href="#i-google"/></svg>Đăng nhập bằng Google</a>
       </div>
       <p id="login-error" class="err small" hidden></p>
+      <p class="small muted legal"><a href="/terms.html">Điều khoản</a> · <a href="/privacy.html">Quyền riêng tư</a> · <button type="button" class="btn ghost sm theme-toggle" data-theme-toggle><svg class="i i-moon"><use href="#i-moon"/></svg><svg class="i i-sun"><use href="#i-sun"/></svg><span data-theme-label>Nền tối</span></button></p>
     </form>
   </div>
 
   <!-- Tạo tài khoản quản trị lần đầu -->
   <div id="setup-admin" class="screen" hidden>
     <form id="setup-form" class="login-card">
-      <div class="brand big"><span class="logo">⏳</span> Chào mừng!</div>
+      <div class="brand big"><svg class="temple i" aria-hidden="true"><use href="#i-temple"/></svg><span class="wordmark">iforgotmywayhome</span></div>
+      <h1>Chào mừng!</h1>
       <p class="muted">Tạo tài khoản quản trị để bảo vệ lịch của bạn. Chỉ tạo được <b>một lần</b>, người tạo đầu tiên là chủ web.</p>
       <input name="username" placeholder="Tên đăng nhập (vd: roemnao)" autocomplete="username" autocapitalize="none" spellcheck="false" required>
       <input name="password" type="password" placeholder="Mật khẩu (ít nhất 4 ký tự)" autocomplete="new-password" required minlength="4">
@@ -64,13 +78,15 @@
         <a class="btn block google-btn" href="/api/google/start?purpose=setup"><svg class="gicon" viewBox="0 0 48 48"><use href="#i-google"/></svg>Tạo tài khoản bằng Google</a>
       </div>
       <p id="setup-error" class="err small" hidden></p>
+      <p class="small muted legal"><a href="/terms.html">Điều khoản</a> · <a href="/privacy.html">Quyền riêng tư</a> · <button type="button" class="btn ghost sm theme-toggle" data-theme-toggle><svg class="i i-moon"><use href="#i-moon"/></svg><svg class="i i-sun"><use href="#i-sun"/></svg><span data-theme-label>Nền tối</span></button></p>
     </form>
   </div>
 
   <!-- Cần kết nối nơi lưu dữ liệu (Vercel) -->
   <div id="setup-storage" class="screen" hidden>
     <div class="login-card">
-      <div class="brand big"><span class="logo">⏳</span> Còn 1 bước nữa!</div>
+      <div class="brand big"><svg class="temple i" aria-hidden="true"><use href="#i-temple"/></svg><span class="wordmark">iforgotmywayhome</span></div>
+      <h1>Còn 1 bước nữa!</h1>
       <p>Hãy kết nối cơ sở dữ liệu miễn phí để lưu tài khoản và lịch của bạn:</p>
       <ol class="steps">
         <li>Vào <b>Vercel</b>, mở project này, chọn tab <b>Storage</b></li>
@@ -84,16 +100,21 @@
 
   <div id="app" class="app" hidden>
     <aside class="sidebar">
-      <div class="brand"><span class="logo">⏳</span><span class="brand-text">Quản lý thời gian</span></div>
+      <div class="brand"><svg class="temple i" aria-hidden="true"><use href="#i-temple"/></svg><span class="wordmark">iforgotmywayhome</span></div>
       <nav id="nav">
         <button data-view="dashboard"><svg class="i"><use href="#i-home"/></svg><span>Tổng quan</span></button>
         <button data-view="calendar"><svg class="i"><use href="#i-calendar"/></svg><span>Lịch</span></button>
         <button data-view="tasks"><svg class="i"><use href="#i-check"/></svg><span>Công việc</span></button>
         <button data-view="inbox"><svg class="i"><use href="#i-inbox"/></svg><span>Đề xuất</span><b class="count" id="inbox-count" hidden></b></button>
         <button data-view="sources"><svg class="i"><use href="#i-link"/></svg><span>Nguồn</span></button>
+        <button data-view="system"><svg class="i"><use href="#i-column"/></svg><span>Hệ thống</span></button>
         <button data-view="settings"><svg class="i"><use href="#i-settings"/></svg><span>Cài đặt</span></button>
       </nav>
-      <div class="sidebar-foot" id="side-status"></div>
+      <div class="sidebar-foot">
+        <div id="side-status"></div>
+        <button type="button" class="btn ghost sm theme-toggle" data-theme-toggle><svg class="i i-moon"><use href="#i-moon"/></svg><svg class="i i-sun"><use href="#i-sun"/></svg><span data-theme-label>Nền tối</span></button>
+        <span class="legal"><a href="/terms.html">Điều khoản</a> · <a href="/privacy.html">Quyền riêng tư</a></span>
+      </div>
     </aside>
 
     <main class="main">
@@ -102,8 +123,12 @@
           <h1 id="view-title">Tổng quan</h1>
           <p id="today-label" class="muted"></p>
         </div>
-        <button id="top-action" class="btn primary"><svg class="i"><use href="#i-plus"/></svg><span>Thêm lịch</span></button>
+        <div class="row">
+          <button type="button" class="btn icon theme-toggle top-theme" data-theme-toggle aria-label="Sáng / tối"><svg class="i i-moon"><use href="#i-moon"/></svg><svg class="i i-sun"><use href="#i-sun"/></svg></button>
+          <button id="top-action" class="btn primary"><svg class="i"><use href="#i-plus"/></svg><span>Thêm lịch</span></button>
+        </div>
       </header>
+      <div class="meander" aria-hidden="true"></div>
       <div id="banner" class="banner" hidden></div>
 
       <!-- TỔNG QUAN -->
@@ -242,6 +267,17 @@
         </div>
       </section>
 
+      <!-- HỆ THỐNG: thành viên, log bot lịch, cấu hình bot Zalo (PyloS), session bộ lọc ↔ agent (vẽ bằng system.js) -->
+      <section class="view" data-view="system">
+        <div class="seg sys-tabs" id="sys-tabs" role="tablist">
+          <button type="button" data-tab="members" class="on"><svg class="i"><use href="#i-users"/></svg>Thành viên</button>
+          <button type="button" data-tab="calbot"><svg class="i"><use href="#i-scroll"/></svg>Nhật ký bot lịch</button>
+          <button type="button" data-tab="config"><svg class="i"><use href="#i-compass"/></svg>Cấu hình bot</button>
+          <button type="button" data-tab="sessions"><svg class="i"><use href="#i-flame"/></svg>Session</button>
+        </div>
+        <div id="sys-body"></div>
+      </section>
+
       <!-- CÀI ĐẶT -->
       <section class="view" data-view="settings">
         <form id="keys-form" class="card" autocomplete="off">
@@ -332,6 +368,7 @@
   </dialog>
 
   <div id="toast" role="status" hidden></div>
-  <script src="app.js"></script>
+  <script src="/system.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>

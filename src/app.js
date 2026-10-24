@@ -491,6 +491,10 @@ app.post('/api/me/zalo-code', wrap(async (req, res) => {
   const settings = await memberSettings();
   res.json({ ...(await createZaloCode(u.id)), botName: settings.botName || null, botChatUrl: settings.botChatUrl || null });
 }));
+// Nhẹ: app hỏi mỗi vài giây trong lúc chờ người dùng gửi mã cho bot.
+app.get('/api/me/zalo', wrap(async (req, res) => {
+  res.json({ zalo: publicMember(await currentMember(req)).zalo });
+}));
 app.delete('/api/me/zalo', wrap(async (req, res) => {
   res.json(publicMember(await unlinkZalo(await memberId(req))));
 }));
