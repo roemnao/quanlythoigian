@@ -22,6 +22,17 @@ import {
   dayAgenda, deleteWebhook, getMe, handleText, handleUpdate, ownerChatId, sendMessage, setWebhook, webhookSecret, zaloConfigured, zaloReceiver,
 } from './zalo.js';
 import { dayKey, TZ, zonedMidnight } from './time.js';
+import { kv } from './kv.js';
+import {
+  acceptTerms, commandsAfter, createZaloCode, deleteMember, getMember, linkZalo, listMembers, memberCookieValue, memberSettings,
+  publicMember, saveMemberSettings, signInMember, TERMS_VERSION, touchSeen, unlinkZalo, verifyMemberCookie,
+} from './members.js';
+import { assign, cancel as cancelAssignment, status as assignmentStatus, update as updateAssignment } from './calbot.js';
+import { logToCsv, readLog, recordFetched } from './calbot-log.js';
+import {
+  addSessionEvents, botStatus, CONFIG_SCHEMA, configForBot, getConfig, heartbeat, readSession, saveConfig, sessionChats,
+  sessionRetentionDays,
+} from './system.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isVercel = Boolean(process.env.VERCEL);
@@ -35,9 +46,9 @@ const safeEqual = (a, b) => {
 };
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch((err) => {
-  res.status(err.status || 500).json({ error: err.message });
+  res.status(err.status || 500).json({ error: err.message, ...err.extra });
 });
-const fail = (status, message) => Object.assign(new Error(message), { status });
+const fail = (status, message, extra) => Object.assign(new Error(message), { status, extra });
 const pick = (obj, keys) => Object.fromEntries(keys.filter((k) => k in obj).map((k) => [k, obj[k]]));
 const findOr404 = (list, id) => list.find((x) => x.id === id) || (() => { throw fail(404, 'Không tìm thấy'); })();
 
@@ -64,12 +75,28 @@ app.post('/api/zalo/webhook', wrap(async (req, res) => {
 
 // ----- API cho AI agent khác (vd agent đang giữ bot Zalo) — xác thực bằng khoá riêng, không cần đăng nhập -----
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
-async function agentStore(req) {
-  const store = await Store.open();
-  const hash = store.data.settings?.agentTokenHash;
+// Mã băm của khoá nằm ở kho khoá–giá trị và được nhớ 30 giây: nhịp tim, session, giao lịch không phải đọc cả kho dữ liệu.
+let agentHashCache = { hash: undefined, at: 0 };
+async function agentTokenHash() {
+  if (agentHashCache.hash !== undefined && Date.now() - agentHashCache.at < 30_000) return agentHashCache.hash;
+  let hash = (await kv.get('agent-token'))?.hash || null;
+  if (!hash) {
+    // Khoá tạo từ bản trước chỉ nằm trong kho chính: chép sang.
+    const settings = (await Store.open()).data.settings || {};
+    hash = settings.agentTokenHash || null;
+    if (hash) await kv.set('agent-token', { hash, at: settings.agentTokenAt || null });
+  }
+  agentHashCache = { hash, at: Date.now() };
+  return hash;
+}
+async function agentAuth(req) {
+  const hash = await agentTokenHash();
   const given = (req.get('Authorization') || '').replace(/^Bearer\s+/i, '') || req.get('X-Api-Key') || '';
   if (!hash || !given || !safeEqual(sha256(given), hash)) throw fail(401, 'Sai hoặc thiếu khoá API (Authorization: Bearer <khoá>)');
-  return store;
+}
+async function agentStore(req) {
+  await agentAuth(req);
+  return Store.open();
 }
 function dateFromQuery(q) {
   if (q === 'tomorrow' || q === 'mai') return new Date(Date.now() + 24 * 3600 * 1000);
@@ -138,10 +165,62 @@ app.patch('/api/agent/tasks/:id', wrap(async (req, res) => {
     return t;
   }));
 }));
+// ----- Bot lịch: agent giao lịch cho người được tag, liên kết Zalo, nhận cấu hình, gửi nhịp tim và session -----
+const maskEmail = (e) => String(e || '').replace(/^(.{2})[^@]*(@.*)$/, '$1…$2');
+const appUrl = (req) => `${baseUrl(req)}/app/`;
+
+// Người dùng nhắn mã 6 số cho bot → agent chuyển sang đây cùng ID Zalo của người gửi.
+app.post('/api/agent/zalo-link', wrap(async (req, res) => {
+  await agentAuth(req);
+  const u = await linkZalo(req.body || {});
+  res.json({ ok: true, member: { name: u.name, email: maskEmail(u.email) }, appUrl: appUrl(req) });
+}));
+app.post('/api/agent/assign', wrap(async (req, res) => {
+  await agentAuth(req);
+  res.json({ ...(await assign(req.body)), appUrl: appUrl(req) });
+}));
+app.get('/api/agent/assign/:id', wrap(async (req, res) => {
+  await agentAuth(req);
+  res.json(await assignmentStatus(req.params.id));
+}));
+app.patch('/api/agent/assign/:id', wrap(async (req, res) => {
+  await agentAuth(req);
+  res.json({ ...(await updateAssignment(req.params.id, req.body || {})), appUrl: appUrl(req) });
+}));
+app.delete('/api/agent/assign/:id', wrap(async (req, res) => {
+  await agentAuth(req);
+  res.json(await cancelAssignment(req.params.id));
+}));
+// Thông số do chủ web chỉnh ở trang Hệ thống (không có khoá bí mật).
+app.get('/api/agent/config', wrap(async (req, res) => {
+  await agentAuth(req);
+  res.json(configForBot(await getConfig()));
+}));
+// Mỗi phút: bot báo đang chạy; nhận lại cấu hình nếu đã đổi (so theo configVersion bot gửi lên).
+app.post('/api/agent/heartbeat', wrap(async (req, res) => {
+  await agentAuth(req);
+  const { config } = await heartbeat(req.body || {});
+  const same = Number(req.body?.configVersion) === config.version;
+  res.json({ ok: true, version: config.version, config: same ? null : configForBot(config) });
+}));
+app.post('/api/agent/sessions', wrap(async (req, res) => {
+  await agentAuth(req);
+  const cfg = await getConfig();
+  if (cfg.values.SESSION_UPLOAD === false) return res.json({ saved: 0, disabled: true });
+  res.json(await addSessionEvents(req.body?.events, sessionRetentionDays(cfg)));
+}));
+
 // Mô tả API (OpenAPI) để nạp vào agent làm "công cụ".
 app.get('/api/agent/openapi.json', (req, res) => {
   const bearer = [{ bearer: [] }];
   const body = (props, required) => ({ required: true, content: { 'application/json': { schema: { type: 'object', properties: props, required } } } });
+  const idParam = { name: 'id', in: 'path', required: true, schema: { type: 'string' } };
+  const assignFields = {
+    title: { type: 'string' }, start: { type: 'string', description: 'ISO 8601 có giờ; lịch cả ngày: YYYY-MM-DD' },
+    end: { type: 'string' }, allDay: { type: 'boolean' }, note: { type: 'string' },
+  };
+  const assignees = { type: 'array', items: { type: 'object', properties: { zaloUid: { type: 'string' }, name: { type: 'string' } }, required: ['zaloUid'] } };
+  const sourceSchema = { type: 'object', properties: { chatId: { type: 'string' }, chatName: { type: 'string' }, senderId: { type: 'string' }, senderName: { type: 'string' }, messageId: { type: 'string' } } };
   res.json({
     openapi: '3.0.3',
     info: { title: 'Quản lý thời gian', version: '1.0.0', description: 'Lịch, việc cần làm, đề xuất từ AI của người dùng. Thời gian dạng ISO 8601, múi giờ ' + TZ },
@@ -162,6 +241,21 @@ app.get('/api/agent/openapi.json', (req, res) => {
         requestBody: body({ done: { type: 'boolean' }, title: { type: 'string' }, deadline: { type: 'string' }, quadrant: { type: 'integer' } }, []) } },
       '/api/agent/events': { post: { operationId: 'createEvent', summary: 'Tạo lịch hẹn (tự lên Google Lịch nếu đã kết nối)',
         requestBody: body({ title: { type: 'string' }, start: { type: 'string', format: 'date-time' }, end: { type: 'string', format: 'date-time' }, allDay: { type: 'boolean' }, note: { type: 'string' } }, ['title', 'start']) } },
+      '/api/agent/zalo-link': { post: { operationId: 'linkZalo', summary: 'Liên kết Zalo của người gửi với tài khoản Gmail bằng mã 6 số họ lấy trong app',
+        requestBody: body({ code: { type: 'string' }, zaloUid: { type: 'string' }, zaloName: { type: 'string' } }, ['code', 'zaloUid']) } },
+      '/api/agent/assign': { post: { operationId: 'assignEvent', summary: 'Giao lịch cho những người được tag: tạo lệnh "thêm" cho app của từng người đã liên kết',
+        requestBody: body({ ...assignFields, assignees: assignees, source: sourceSchema }, ['title', 'start', 'assignees']) } },
+      '/api/agent/assign/{id}': {
+        get: { operationId: 'assignmentStatus', summary: 'Tình trạng lịch đã giao: ai đã liên kết, app của ai đã lấy lệnh', parameters: [idParam] },
+        patch: { operationId: 'updateAssignment', summary: 'Sửa lịch đã giao (giờ, tiêu đề, người nhận); người bị bỏ nhận lệnh xoá', parameters: [idParam],
+          requestBody: body({ ...assignFields, assignees, add: assignees, remove: assignees }, []) },
+        delete: { operationId: 'cancelAssignment', summary: 'Huỷ lịch đã giao: lệnh xoá cho mọi người đã nhận', parameters: [idParam] },
+      },
+      '/api/agent/config': { get: { operationId: 'getBotConfig', summary: 'Thông số bot do chủ web chỉnh (model, bộ lọc, giới hạn…), không có khoá bí mật' } },
+      '/api/agent/heartbeat': { post: { operationId: 'heartbeat', summary: 'Báo bot đang chạy; trả về cấu hình mới nếu configVersion đã cũ',
+        requestBody: body({ version: { type: 'string' }, configVersion: { type: 'integer' }, tokensToday: { type: 'integer' }, lastError: { type: 'string' } }, []) } },
+      '/api/agent/sessions': { post: { operationId: 'uploadSessions', summary: 'Gửi các bước tin → bộ lọc → agent → tool để xem lại trên trang Hệ thống',
+        requestBody: body({ events: { type: 'array', items: { type: 'object' } } }, ['events']) } },
     },
   });
 });
@@ -258,10 +352,14 @@ app.post('/api/logout', (req, res) => {
 
 // ----- Đăng nhập / liên kết / Google Lịch qua tài khoản Google -----
 const OAUTH_COOKIE = 'qltg_oauth';
-const PURPOSES = ['login', 'setup', 'link', 'calendar'];
+const TERMS_COOKIE = 'qltg_terms';
+const MEMBER_COOKIE = 'qltg_member';
+const PURPOSES = ['login', 'setup', 'link', 'calendar', 'member'];
 const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 const redirectUri = (req) => `${baseUrl(req)}/api/google/callback`;
 const backTo = (res, params) => res.redirect(`/?${new URLSearchParams(params)}`);
+// Thành viên đăng nhập từ web app thì quay về /app/.
+const backToApp = (res, params) => res.redirect(`/app/?${new URLSearchParams(params)}`);
 
 // Tên đăng nhập gợi ý từ email: phần trước @, chỉ giữ ký tự hợp lệ.
 function usernameFromEmail(email) {
@@ -273,13 +371,17 @@ app.get('/api/google/start', wrap(async (req, res) => {
   const purpose = String(req.query.purpose || '');
   if (!PURPOSES.includes(purpose)) throw fail(400, 'Mục đích không hợp lệ');
   const store = await Store.open();
-  if (!googleConfigured()) return backTo(res, { google_error: 'Chưa nhập Google Client ID/Secret ở Cài đặt → Khoá API' });
+  const back = purpose === 'member' ? backToApp : backTo;
+  if (!googleConfigured()) return back(res, { google_error: purpose === 'member' ? 'Chủ hệ thống chưa cấu hình đăng nhập Google' : 'Chưa nhập Google Client ID/Secret ở Cài đặt → Khoá API' });
   if ((purpose === 'link' || purpose === 'calendar') && !verifySession(store, readCookie(req, COOKIE))) {
     return backTo(res, { google_error: 'Hãy đăng nhập trước' });
   }
+  const short = { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60 * 1000, path: '/api/google' };
+  // Thành viên mới tick "Tôi đồng ý" trước khi đăng nhập: nhớ phiên bản điều khoản đã đồng ý cho bước tạo tài khoản.
+  if (purpose === 'member' && req.query.terms === TERMS_VERSION) res.cookie(TERMS_COOKIE, TERMS_VERSION, short);
   // Chống giả mạo (CSRF): mã ngẫu nhiên vừa nằm trong state vừa nằm trong cookie của trình duyệt này.
   const nonce = crypto.randomBytes(16).toString('hex');
-  res.cookie(OAUTH_COOKIE, nonce, { httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 10 * 60 * 1000, path: '/api/google' });
+  res.cookie(OAUTH_COOKIE, nonce, short);
   const loginHint = purpose === 'calendar' ? store.data.auth?.admin?.google?.email : undefined;
   res.redirect(authUrl({ redirectUri: redirectUri(req), state: `${purpose}.${nonce}`, purpose, loginHint }));
 }));
@@ -287,14 +389,25 @@ app.get('/api/google/start', wrap(async (req, res) => {
 app.get('/api/google/callback', wrap(async (req, res) => {
   const [purpose, nonce] = String(req.query.state || '').split('.');
   const expected = readCookie(req, OAUTH_COOKIE);
+  const acceptedTerms = readCookie(req, TERMS_COOKIE);
   res.clearCookie(OAUTH_COOKIE, { path: '/api/google' });
-  if (req.query.error) return backTo(res, { google_error: req.query.error === 'access_denied' ? 'Bạn đã huỷ đăng nhập Google' : String(req.query.error) });
+  res.clearCookie(TERMS_COOKIE, { path: '/api/google' });
+  const back = purpose === 'member' ? backToApp : backTo;
+  if (req.query.error) return back(res, { google_error: req.query.error === 'access_denied' ? 'Bạn đã huỷ đăng nhập Google' : String(req.query.error) });
   if (!PURPOSES.includes(purpose) || !nonce || !expected || !safeEqual(nonce, expected)) {
-    return backTo(res, { google_error: 'Phiên đăng nhập Google không hợp lệ, hãy thử lại' });
+    return back(res, { google_error: 'Phiên đăng nhập Google không hợp lệ, hãy thử lại' });
   }
   try {
     await Store.open(); // nạp Client ID/Secret
     const { claims, refreshToken } = await exchangeCode(String(req.query.code || ''), redirectUri(req));
+    if (purpose === 'member') {
+      const r = await signInMember(claims, { acceptedTerms });
+      if (r.needsTerms) return backToApp(res, { google_error: 'Hãy đọc và đánh dấu đồng ý Điều khoản dịch vụ trước khi tạo tài khoản' });
+      res.cookie(MEMBER_COOKIE, await memberCookieValue(r.user.id), {
+        httpOnly: true, sameSite: 'lax', secure: req.secure, maxAge: 180 * 24 * 3600 * 1000, path: '/',
+      });
+      return backToApp(res, { google: r.created ? 'member-new' : 'member' });
+    }
     const store = await Store.open();
     const admin = store.data.auth?.admin;
     const loggedIn = verifySession(store, readCookie(req, COOKIE));
@@ -336,9 +449,79 @@ app.get('/api/google/callback', wrap(async (req, res) => {
     await syncGoogle(Store.open);
     return backTo(res, { google: 'calendar' });
   } catch (err) {
-    return backTo(res, { google_error: err.message });
+    return back(res, { google_error: err.message });
   }
 }));
+
+// ----- Thành viên (web app /app) -----
+// Chỉ dữ liệu của chính người đăng nhập: không liệt kê, không tìm kiếm, và không có API nào để gửi lịch ngược lên.
+const signInNeeded = () => fail(401, 'Cần đăng nhập bằng Gmail', { signIn: true, termsVersion: TERMS_VERSION });
+async function memberId(req) {
+  const id = await verifyMemberCookie(readCookie(req, MEMBER_COOKIE));
+  if (!id) throw signInNeeded();
+  return id;
+}
+async function currentMember(req) {
+  const u = await getMember(await memberId(req));
+  if (!u) throw signInNeeded();
+  return u;
+}
+
+app.get('/api/me', wrap(async (req, res) => {
+  await Store.open(); // nạp Google Client ID nhập trên web
+  let u;
+  try {
+    u = await currentMember(req);
+  } catch (err) {
+    err.extra = { ...err.extra, googleReady: googleConfigured() };
+    throw err;
+  }
+  const settings = await memberSettings();
+  res.json({
+    ...publicMember(u), termsCurrent: TERMS_VERSION,
+    bot: { name: settings.botName || null, chatUrl: settings.botChatUrl || null },
+    googleClientId: cfg('GOOGLE_CLIENT_ID') || null,
+  });
+}));
+app.post('/api/me/terms', wrap(async (req, res) => {
+  res.json(publicMember(await acceptTerms(await memberId(req), req.body?.version)));
+}));
+app.post('/api/me/zalo-code', wrap(async (req, res) => {
+  const u = await currentMember(req);
+  const settings = await memberSettings();
+  res.json({ ...(await createZaloCode(u.id)), botName: settings.botName || null, botChatUrl: settings.botChatUrl || null });
+}));
+// Nhẹ: app hỏi mỗi vài giây trong lúc chờ người dùng gửi mã cho bot.
+app.get('/api/me/zalo', wrap(async (req, res) => {
+  res.json({ zalo: publicMember(await currentMember(req)).zalo });
+}));
+app.delete('/api/me/zalo', wrap(async (req, res) => {
+  res.json(publicMember(await unlinkZalo(await memberId(req))));
+}));
+// App hỏi lệnh mới (thêm / sửa / xoá lịch). Không có gì mới thì chỉ tốn một lượt đọc.
+app.get('/api/me/commands', wrap(async (req, res) => {
+  const id = await memberId(req);
+  const r = await commandsAfter(id, req.query.after);
+  if (!r) throw signInNeeded();
+  touchSeen(id).catch(() => {});
+  if (r.commands.length) {
+    const u = await getMember(id);
+    if (!u) throw signInNeeded();
+    if (publicMember(u).needsTerms) throw fail(403, 'Điều khoản đã thay đổi, hãy đọc và đồng ý lại để nhận lịch mới', { needsTerms: true, termsVersion: TERMS_VERSION });
+    await recordFetched(id, r.commands.map((c) => c.logId));
+  }
+  res.json(r);
+}));
+app.post('/api/me/logout', (req, res) => {
+  res.clearCookie(MEMBER_COOKIE, { path: '/' });
+  res.json({ ok: true });
+});
+app.delete('/api/me', wrap(async (req, res) => {
+  await deleteMember(await memberId(req));
+  res.clearCookie(MEMBER_COOKIE, { path: '/' });
+  res.json({ ok: true });
+}));
+app.use('/api/me', (req, res) => res.status(404).json({ error: 'Không có API này' }));
 
 app.use('/api', wrap(async (req, res, next) => {
   const store = await Store.open();
@@ -587,13 +770,18 @@ app.put('/api/settings/keys', wrap(async (req, res) => {
 // Khoá chỉ hiện đúng 1 lần lúc tạo; máy chủ chỉ lưu mã băm.
 app.post('/api/settings/agent-token', wrap(async (req, res) => {
   const token = `qltg_${crypto.randomBytes(24).toString('hex')}`;
+  const at = new Date().toISOString();
   await mutate((s) => {
-    s.data.settings = { ...s.data.settings, agentTokenHash: sha256(token), agentTokenAt: new Date().toISOString() };
+    s.data.settings = { ...s.data.settings, agentTokenHash: sha256(token), agentTokenAt: at };
   });
+  await kv.set('agent-token', { hash: sha256(token), at });
+  agentHashCache = { hash: undefined, at: 0 };
   res.json({ token });
 }));
 app.delete('/api/settings/agent-token', wrap(async (req, res) => {
   await mutate((s) => { delete s.data.settings.agentTokenHash; delete s.data.settings.agentTokenAt; });
+  await kv.del('agent-token');
+  agentHashCache = { hash: undefined, at: 0 };
   res.json({ ok: true });
 }));
 app.put('/api/settings/zalo-receiver', wrap(async (req, res) => {
@@ -683,6 +871,38 @@ app.post('/api/zalo/test', wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.post('/api/cron/run', wrap(async (req, res) => res.json(await runCron({ forceSync: true }))));
+
+// ----- Quản trị: thành viên, log bot lịch, hệ thống (bot Zalo), session -----
+app.get('/api/admin/members', wrap(async (req, res) => {
+  res.json({ members: await listMembers(), settings: await memberSettings(), termsVersion: TERMS_VERSION, appUrl: appUrl(req) });
+}));
+app.put('/api/admin/members/settings', wrap(async (req, res) => res.json(await saveMemberSettings(req.body || {}))));
+app.delete('/api/admin/members/:id', wrap(async (req, res) => {
+  if (!(await deleteMember(req.params.id))) throw fail(404, 'Không tìm thấy thành viên');
+  res.json({ ok: true });
+}));
+app.delete('/api/admin/members/:id/zalo', wrap(async (req, res) => {
+  await unlinkZalo(req.params.id);
+  res.json({ ok: true });
+}));
+app.get('/api/admin/calbot-log', wrap(async (req, res) => {
+  const { from, to, member } = req.query;
+  res.json({ entries: await readLog({ from, to, member }) });
+}));
+app.get('/api/admin/calbot-log/csv', wrap(async (req, res) => {
+  const { from, to, member } = req.query;
+  const csv = logToCsv(await readLog({ from, to, member }));
+  res.set('Content-Disposition', `attachment; filename="calbot-log-${from || dayKey()}_${to || dayKey()}.csv"`);
+  res.type('text/csv; charset=utf-8').send(csv);
+}));
+app.get('/api/admin/system', wrap(async (req, res) => {
+  res.json({ schema: CONFIG_SCHEMA, config: await getConfig(), bot: await botStatus() });
+}));
+app.put('/api/admin/system', wrap(async (req, res) => res.json(await saveConfig(req.body?.values))));
+app.get('/api/admin/sessions/chats', wrap(async (req, res) => {
+  res.json({ chats: await sessionChats(sessionRetentionDays(await getConfig())) });
+}));
+app.get('/api/admin/sessions', wrap(async (req, res) => res.json(await readSession(String(req.query.chat || ''), String(req.query.day || '')))));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Không có API này' }));
 

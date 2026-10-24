@@ -3,32 +3,68 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chính sách quyền riêng tư – Quản lý thời gian</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#1d1f24">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/page.css">
+  <title>Chính sách quyền riêng tư · iforgotmywayhome</title>
 </head>
 <body>
-  <main class="main" style="max-width:760px;margin:0 auto">
-    <div class="card">
-      <h1>Chính sách quyền riêng tư</h1>
-      <p class="muted small">Cập nhật: 24/10/2026</p>
-      <p>“Quản lý thời gian” là ứng dụng cá nhân, chỉ chủ sở hữu (tài khoản quản trị) sử dụng.</p>
-      <h2>Dữ liệu được dùng</h2>
-      <ul>
-        <li><b>Tài khoản Google:</b> email và mã định danh tài khoản, chỉ để đăng nhập và liên kết tài khoản.</li>
-        <li><b>Google Lịch:</b> đọc sự kiện của các lịch bạn chọn để hiển thị trên web; tạo, sửa, xoá sự kiện do chính bạn tạo trên web để đồng bộ lên lịch chính.</li>
-        <li><b>Lịch, công việc, ghi chú</b> bạn nhập vào web; nội dung bạn gửi cho AI (Gemini) hoặc bot Zalo để tạo lịch.</li>
-      </ul>
-      <h2>Lưu trữ và chia sẻ</h2>
-      <ul>
-        <li>Dữ liệu lưu trong cơ sở dữ liệu riêng của chủ sở hữu (Upstash Redis). Mật khẩu được băm, không lưu dạng gốc.</li>
-        <li>Không bán, không chia sẻ dữ liệu cho bên thứ ba, không dùng cho quảng cáo.</li>
-        <li>Nội dung bạn chủ động gửi để phân tích được chuyển tới Google Gemini; tin nhắn nhắc việc gửi qua Zalo.</li>
-        <li>Việc sử dụng dữ liệu nhận từ API của Google tuân theo Google API Services User Data Policy, bao gồm các yêu cầu Limited Use.</li>
-      </ul>
-      <h2>Xoá dữ liệu</h2>
-      <p>Bạn có thể ngắt kết nối Google Lịch hoặc huỷ liên kết Google trong Cài đặt bất cứ lúc nào, và gỡ quyền tại <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</p>
-      <p><a href="/">← Về trang chính</a></p>
-    </div>
+<!-- Bản mẫu do Claude soạn, không phải tư vấn pháp lý: chủ hệ thống nên đọc lại và sửa cho đúng cách mình vận hành.
+     Sửa nội dung thì đổi cả số phiên bản ở đây và TERMS_VERSION trong src/members.js. -->
+<div class="page">
+  <header class="page-head">
+    <a class="brand" href="/app/"><svg class="temple i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9.5 12 4l9 5.5z"/><path d="M4 9.5h16M5.8 11.5v6.2M9.4 11.5v6.2M14.6 11.5v6.2M18.2 11.5v6.2M3.5 18.5h17M2 21h20"/></svg><span class="wordmark">iforgotmywayhome</span></a>
+    <button type="button" class="btn ghost sm theme-toggle" data-theme-toggle><svg class="i i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><svg class="i i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><span data-theme-label>Nền tối</span></button>
+  </header>
+  <div class="meander" aria-hidden="true"></div>
+  <main class="card prose">
+    <h1>Chính sách quyền riêng tư</h1>
+    <p class="muted small">Phiên bản <b data-terms-version>2026-10-24</b> · áp dụng từ 24/10/2026</p>
+
+    <h2>Dữ liệu được thu thập</h2>
+    <ul>
+      <li><b>Tài khoản Google:</b> email, tên, ảnh đại diện và mã định danh tài khoản. Chỉ dùng để đăng nhập và cho chủ hệ thống biết ai đang dùng.</li>
+      <li><b>Liên kết Zalo:</b> mã định danh và tên tài khoản Zalo bạn đã liên kết, để bot biết người được nhắc trong nhóm là bạn.</li>
+      <li><b>Lệnh lịch giao cho bạn:</b> tiêu đề, thời gian, ghi chú, tên nhóm và người đã giao.</li>
+      <li><b>Nhật ký bot lịch:</b> mỗi lệnh đã giao, ai nhận, ai chưa liên kết, và lúc app của bạn lấy lệnh về.</li>
+      <li><b>Tin nhắn trong nhóm:</b> trợ lý AI của nhóm (chạy trên máy của chủ hệ thống) đọc tin nhắn trong nhóm để nhận ra yêu cầu giao lịch, và gửi nội dung cần thiết tới Google Gemini để xử lý. Nếu chủ hệ thống bật tính năng xem lại session, các bước xử lý (tin nhắn, quyết định của bộ lọc, câu trả lời của AI) được lưu trên máy chủ để quản trị.</li>
+    </ul>
+
+    <h2>Google Lịch</h2>
+    <ul>
+      <li>App xin quyền <code>calendar.events</code> ngay trong trình duyệt của bạn. Quyền này (token) <b>chỉ nằm trong trình duyệt</b>, không bao giờ được gửi lên máy chủ.</li>
+      <li>App chỉ tạo, sửa, xoá các sự kiện do chính nó tạo cho lịch được giao. App không đọc, không tải lên các sự kiện khác trong Google Lịch của bạn.</li>
+      <li>Bạn có thể gỡ quyền bất cứ lúc nào tại <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a>.</li>
+      <li>Việc sử dụng dữ liệu nhận từ API của Google tuân theo <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google API Services User Data Policy</a>, bao gồm các yêu cầu Limited Use.</li>
+    </ul>
+
+    <h2>Lưu ở đâu, bao lâu</h2>
+    <ul>
+      <li>Dữ liệu nằm trong cơ sở dữ liệu của chủ hệ thống (Upstash Redis, qua Vercel).</li>
+      <li>Lệnh lịch chờ app lấy: tối đa <b>30 ngày</b>. Nhật ký bot lịch và thông tin lịch đã giao: <b>90 ngày</b>. Session xem lại (nếu bật): mặc định <b>14 ngày</b>, tối đa 90 ngày.</li>
+      <li>Hồ sơ tài khoản: tới khi bạn xoá tài khoản.</li>
+      <li>Trên máy của bạn, app lưu lịch sử các lệnh đã nhận và tiến độ đồng bộ trong bộ nhớ của trình duyệt. Xoá dữ liệu trang web trong trình duyệt là xoá phần này.</li>
+    </ul>
+
+    <h2>Chia sẻ</h2>
+    <ul>
+      <li>Không bán dữ liệu, không dùng cho quảng cáo.</li>
+      <li>Chủ hệ thống xem được danh sách thành viên, nhật ký bot lịch và session (nếu bật) để vận hành hệ thống.</li>
+      <li>Nội dung tin nhắn cần xử lý được gửi tới Google Gemini; dữ liệu được lưu ở Upstash và Vercel. Các dịch vụ này xử lý dữ liệu theo chính sách của họ.</li>
+    </ul>
+
+    <h2>Quyền của bạn</h2>
+    <ul>
+      <li><b>Gỡ liên kết Zalo</b> trong app: bot không giao lịch cho bạn nữa.</li>
+      <li><b>Xoá tài khoản</b> trong app: hồ sơ và các lệnh đang chờ bị xoá ngay. Các dòng nhật ký có email của bạn tự hết hạn sau 90 ngày; muốn xoá sớm hơn, hãy liên hệ chủ hệ thống.</li>
+      <li>Hỏi chủ hệ thống bạn đang có những dữ liệu nào.</li>
+    </ul>
+
+    <p class="note small">Trang quản trị và tính năng lịch riêng của chủ hệ thống (đồng bộ Google Lịch, nguồn lịch, bot nhắc việc) chỉ chủ hệ thống dùng và không chạm tới tài khoản Google của thành viên.</p>
   </main>
+  <footer class="page-foot"><a href="/app/">Web app</a><a href="/terms.html">Điều khoản dịch vụ</a><a href="/privacy.html">Chính sách quyền riêng tư</a></footer>
+</div>
 </body>
 </html>

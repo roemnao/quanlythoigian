@@ -57,7 +57,7 @@ export function decodeIdToken(idToken) {
   if (!['accounts.google.com', 'https://accounts.google.com'].includes(c.iss)) throw new Error('id_token không phải do Google cấp');
   if (!c.exp || c.exp * 1000 < Date.now()) throw new Error('id_token đã hết hạn');
   if (!c.email_verified) throw new Error('Email Google chưa được xác minh');
-  return { sub: c.sub, email: c.email, name: c.name || null };
+  return { sub: c.sub, email: c.email, name: c.name || null, picture: c.picture || null };
 }
 
 export async function exchangeCode(code, redirectUri) {
