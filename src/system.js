@@ -34,7 +34,7 @@ export const CONFIG_SCHEMA = [
 
   { group: 'Quyền', key: 'ALLOW_ALL_CHATS', type: 'bool', label: 'Trả lời mọi nhóm / người (tắt = chỉ danh sách cho phép)', placeholder: 'false', live: true },
   { group: 'Quyền', key: 'ALLOWED_CHAT_IDS', type: 'csv', label: 'ID nhóm / người được phép (cách nhau dấu phẩy)', placeholder: '', live: true },
-  { group: 'Quyền', key: 'ASSIGN_ALLOWED', type: 'choice', options: ['owner', 'all'], label: 'Ai được giao lịch cho người khác (owner = chỉ chủ bot)', placeholder: 'owner', live: true },
+  { group: 'Quyền', key: 'ASSIGN_ALLOWED', type: 'choice', options: ['owner', 'all'], label: 'Ai được giao lịch cho người khác (owner = owner và leader từng nhóm, leader đặt bằng /add leader trên Zalo)', placeholder: 'owner', live: true },
 
   { group: 'Session', key: 'SESSION_UPLOAD', type: 'bool', label: 'Gửi session bộ lọc ↔ agent lên đây để xem lại', placeholder: 'true', live: true },
   { group: 'Session', key: 'SESSION_RETENTION_DAYS', type: 'int', min: 1, max: 90, label: 'Giữ session bao nhiêu ngày', placeholder: '14', live: true, serverOnly: true },
