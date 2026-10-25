@@ -161,6 +161,8 @@ Trên máy, dữ liệu lưu ở `data/db.json` và `data/kv.json`. Bot Zalo nh�
 
 Trên Vercel: đổi biến môi trường (ví dụ `APP_HOST`) xong phải **Redeploy** (Deployments → ⋯ → Redeploy) thì mới có hiệu lực.
 
+Đặt quyền giao lịch cho bot (`ASSIGN_ALLOWED=owner|all`): đăng nhập trang quản trị → **Hệ thống** → nhóm **Quyền** → Lưu. Bot tự áp dụng trong tối đa 60 giây, không cần khởi động lại.
+
 Lệnh của bot Zalo (`/allow`, `/mode`, `/id`, `giao_lich`…) nằm trong README của PyloS, mục "Bảng lệnh".
 
 ## Biến môi trường khác
