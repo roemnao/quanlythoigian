@@ -148,6 +148,21 @@ Trên máy, dữ liệu lưu ở `data/db.json` và `data/kv.json`. Bot Zalo nh�
 
 > ⚠️ **Không bao giờ commit key vào repo.** Key chỉ nằm trong `.env` trên máy hoặc trong Environment Variables của Vercel.
 
+## 📋 Bảng lệnh
+
+| Lệnh | Tác dụng |
+|---|---|
+| `npm install` | Cài thư viện |
+| `npm start` | Chạy server (quản trị `http://localhost:3000`) |
+| `npm run dev` | Chạy và tự tải lại khi sửa code |
+| `npm test` | Kiểm thử đơn vị (`node --test`) |
+| `npm run test:e2e` | Kiểm thử web app bằng trình duyệt thật (cần Playwright + Chromium). Thêm `SHOTS_DIR=thư-mục` để lưu ảnh chụp |
+| `APP_HOST=app.localhost npm start` | Thử hai tên miền: app `http://app.localhost:3000`, quản trị `http://localhost:3000` |
+
+Trên Vercel: đổi biến môi trường (ví dụ `APP_HOST`) xong phải **Redeploy** (Deployments → ⋯ → Redeploy) thì mới có hiệu lực.
+
+Lệnh của bot Zalo (`/allow`, `/mode`, `/id`, `giao_lich`…) nằm trong README của PyloS, mục "Bảng lệnh".
+
 ## Biến môi trường khác
 | Biến | Ý nghĩa | Mặc định |
 |---|---|---|
