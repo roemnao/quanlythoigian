@@ -23,6 +23,7 @@ import {
 } from './zalo.js';
 import { dayKey, TZ, zonedMidnight } from './time.js';
 import { kv } from './kv.js';
+import { approveDeviceLogin, pollDeviceLogin, startDeviceLogin } from './devicelogin.js';
 import {
   acceptTerms, commandsAfter, createZaloCode, deleteMember, getMember, linkZalo, listMembers, memberCookieValue, memberSettings,
   publicMember, saveMemberSettings, signInMember, TERMS_VERSION, touchSeen, unlinkZalo, verifyMemberCookie,
@@ -216,6 +217,18 @@ app.patch('/api/agent/assign/:id', wrap(async (req, res) => {
 app.delete('/api/agent/assign/:id', wrap(async (req, res) => {
   await agentAuth(req);
   res.json(await cancelAssignment(req.params.id));
+}));
+// Đăng nhập trang quản lý bot bằng Gmail: bot xin mã, người dùng duyệt ở web app, bot hỏi lại kết quả.
+app.post('/api/agent/device-login', wrap(async (req, res) => {
+  await agentAuth(req);
+  const { code, expiresIn } = await startDeviceLogin();
+  res.json({ code, expiresIn, url: `${appUrl(req)}?device=${code}` });
+}));
+app.get('/api/agent/device-login/:code', wrap(async (req, res) => {
+  await agentAuth(req);
+  const store = await Store.open();
+  const adminSub = authMode(store) === 'db' ? store.data.auth?.admin?.google?.sub : null;
+  res.json(await pollDeviceLogin(req.params.code, adminSub));
 }));
 // Thông số do chủ web chỉnh ở trang Hệ thống (không có khoá bí mật).
 app.get('/api/agent/config', wrap(async (req, res) => {
@@ -543,6 +556,11 @@ app.get('/api/me/commands', wrap(async (req, res) => {
     await recordFetched(id, r.commands.map((c) => c.logId));
   }
   res.json(r);
+}));
+// Duyệt mã đăng nhập của trang quản lý bot (chỉ người đã đăng nhập Gmail ở web app).
+app.post('/api/me/device-login/approve', wrap(async (req, res) => {
+  const u = await currentMember(req);
+  res.json({ ok: true, ...(await approveDeviceLogin(req.body?.code, u, req.ip)) });
 }));
 app.post('/api/me/logout', (req, res) => {
   res.clearCookie(MEMBER_COOKIE, { path: '/' });

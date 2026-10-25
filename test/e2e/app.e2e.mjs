@@ -148,6 +148,21 @@ try {
 
   await ctx.close();
 
+  // Duyệt đăng nhập của trang quản lý bot: mở ?device=<mã> khi đã đăng nhập Gmail → bấm Cho phép → bot nhận kết quả.
+  const { startDeviceLogin, pollDeviceLogin } = await import('../../src/devicelogin.js');
+  const device = await startDeviceLogin();
+  const dv = await page();
+  await dv.p.goto(`${base}/?device=${device.code}`);
+  await dv.p.getByText('Đăng nhập trang quản lý bot?').waitFor();
+  assert.ok((await dv.p.locator('body').innerText()).includes('an@gmail.com'));
+  assert.equal(new URL(dv.p.url()).search, '', 'mã được xoá khỏi địa chỉ');
+  await snap(dv.p, 'app-device-dark-desktop');
+  await dv.p.getByRole('button', { name: 'Cho phép' }).click();
+  await dv.p.getByText('Đã duyệt').first().waitFor();
+  assert.deepEqual(await pollDeviceLogin(device.code, 'sub-khac'), { status: 'approved', email: 'an@gmail.com', isAdmin: false });
+  assert.deepEqual(dv.errors, []);
+  await dv.ctx.close();
+
   // Tên miền quản trị: trang đăng nhập quản trị; link /app/ cũ đưa sang web app; phiên thành viên không dùng được ở đây.
   const adminView = await page({ signedIn: false });
   await adminView.p.goto(`${adminBase}/`);

@@ -386,6 +386,38 @@ async function deleteAccount() {
   toast('Đã xoá tài khoản');
 }
 
+// ---------- Duyệt đăng nhập của trang quản lý bot ----------
+// Link ?device=<mã> do trang quản lý bot mở. Mã giữ qua bước đăng nhập Google bằng sessionStorage.
+const DEVICE_KEY = 'ifmwh-device';
+const deviceStore = {
+  get() { try { return sessionStorage.getItem(DEVICE_KEY); } catch { return null; } },
+  set(v) { try { v ? sessionStorage.setItem(DEVICE_KEY, v) : sessionStorage.removeItem(DEVICE_KEY); } catch { /* bỏ qua */ } },
+};
+
+function renderDevice(code) {
+  clearInterval(pollTimer);
+  document.body.dataset.screen = 'device';
+  const done = (title, text) => {
+    deviceStore.set(null);
+    $('#view').replaceChildren(h('section', { class: 'card hero' }, h('h1', {}, title), h('p', {}, text),
+      h('button', { class: 'btn primary block', type: 'button', onclick: () => boot() }, 'Về app')));
+  };
+  $('#view').replaceChildren(h('section', { class: 'card hero' },
+    h('h1', {}, 'Đăng nhập trang quản lý bot?'),
+    h('p', {}, `Trang quản lý bot trên máy chủ của bạn xin đăng nhập bằng ${st.me.email}. Chỉ bấm Cho phép nếu chính bạn vừa mở nó.`),
+    h('p', { class: 'small muted' }, 'Chỉ tài khoản Gmail của chủ hệ thống mới vào được. Cho phép không chia sẻ lịch hay dữ liệu nào của bạn.'),
+    h('button', { class: 'btn primary block', type: 'button', onclick: guard(async () => {
+      try {
+        await api('POST', '/api/me/device-login/approve', { code });
+      } catch (e) {
+        done('Chưa duyệt được', e.message);
+        return;
+      }
+      done('Đã duyệt', 'Quay lại trang quản lý bot, nó sẽ tự đăng nhập trong vài giây.');
+    }) }, 'Cho phép'),
+    h('button', { class: 'btn ghost block', type: 'button', onclick: () => done('Đã từ chối', 'Không có gì được cấp quyền.') }, 'Từ chối')));
+}
+
 // ---------- Khởi động ----------
 async function boot() {
   const res = await fetch('/api/me').catch(() => null);
@@ -405,11 +437,17 @@ async function boot() {
   st.termsVersion = data.termsCurrent;
   if (data.needsTerms) { renderTerms(); return; }
   loadLocal();
+  const device = deviceStore.get();
+  if (device) { renderDevice(device); return; }
   renderHome();
   startPolling();
 }
 
 const qs = new URLSearchParams(location.search);
+if (/^[0-9a-f]{32}$/.test(qs.get('device') || '')) {
+  deviceStore.set(qs.get('device'));
+  history.replaceState(null, '', location.pathname);
+}
 if (qs.has('google') || qs.has('google_error')) {
   const err = qs.get('google_error');
   history.replaceState(null, '', location.pathname);

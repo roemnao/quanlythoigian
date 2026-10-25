@@ -73,6 +73,8 @@ test('tên miền app không có API quản trị; tên miền quản trị khô
   assert.equal((await call('POST', '/api/login', { host: APP, body: { username: 'chuweb', password: 'matkhau' } })).status, 404);
   assert.equal((await call('GET', '/api/me', { host: APP })).status, 401, 'API thành viên có ở tên miền app');
   assert.equal((await call('GET', '/api/me')).status, 404);
+  assert.equal((await call('POST', '/api/me/device-login/approve', { body: { code: 'a'.repeat(32) } })).status, 404, 'duyệt đăng nhập bot chỉ ở tên miền app');
+  assert.equal((await call('POST', '/api/me/device-login/approve', { host: APP, body: { code: 'a'.repeat(32) } })).status, 401);
   assert.equal((await call('POST', '/api/me/zalo-code')).status, 404);
   assert.equal((await call('GET', '/api/state', { cookie: admin })).status, 200);
 
