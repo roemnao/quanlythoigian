@@ -120,6 +120,7 @@ API cho agent (xác thực `Authorization: Bearer <khoá>`; mô tả OpenAPI ở
 | `PATCH /api/agent/assign/:id` `{…, assignees? \| add? \| remove?}` | sửa: người đã nhận được lệnh *sửa*, người mới nhận *thêm*, người bị bỏ nhận *xoá* |
 | `DELETE /api/agent/assign/:id` | huỷ: lệnh *xoá* cho mọi người đã nhận |
 | `GET /api/agent/assign/:id` | tình trạng: ai đã liên kết, app của ai đã lấy lệnh |
+| `POST /api/agent/device-login`, `GET /api/agent/device-login/:mã` | đăng nhập trang quản lý bot bằng Gmail: bot xin mã, chủ web mở `?device=<mã>` ở web app và bấm Cho phép, bot hỏi lại (`isAdmin` = Gmail trùng Gmail đã liên kết vào tài khoản quản trị; mã dùng một lần, hết hạn sau 10 phút) |
 | `GET /api/agent/config`, `POST /api/agent/heartbeat` | thông số bot, nhịp tim (trả cấu hình mới nếu có) |
 | `POST /api/agent/sessions` `{events:[…]}` | session bộ lọc ↔ agent |
 | `POST /api/agent/message`, `GET /api/agent/agenda`, `POST /api/agent/events`, `GET/POST /api/agent/tasks`, `PATCH /api/agent/tasks/:id` | lịch riêng của chủ web (như trước) |
