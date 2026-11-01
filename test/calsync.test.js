@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { applyAll, applyCommand, classify, googleEventId, toGoogleEvent } from '../public/app/sync.js';
+import { applyAll, applyCommand, classify, googleEventId, toGoogleEvent } from '../src/calsync.js';
 import { TERMS_VERSION } from '../src/members.js';
 
 const ev = { id: 'a1b2c3d4e5f6', title: 'Họp nhóm', start: '2026-10-30T02:00:00.000Z', end: null, allDay: false, note: 'Phòng 301',

@@ -1,212 +1,149 @@
-# 🏛️ iforgotmywayhome
+# 🏛️ iforgotmywayhome (web bot lịch)
 
-Tên chính thức của web **quanlythoigian**. Web làm hai việc:
+Web cho cả nhóm, hai việc chính:
 
-1. **Giao lịch qua Zalo cho cả nhóm.** Trong nhóm Zalo, ai đó nhờ bot "giao @An @Bình họp 9h mai". Bot Zalo (repo [PyloS](https://github.com/roemnao/PyloS)) nhận ra yêu cầu và báo cho web. Web (gọi là **bot lịch**) ghi lệnh vào hàng của từng người. **Web app** của mỗi người tự ghi lịch đó vào **Google Lịch của chính họ**.
-2. **Quản lý thời gian cho chủ web:** lịch, việc cần làm, Pomodoro, tự lấy lịch từ nguồn (ICS, trang web, văn bản) bằng AI Gemini, bot Zalo nhắc việc.
+1. **Giao lịch qua Zalo.** Trong nhóm Zalo ai đó nhờ bot "giao @An @Bình họp 9h mai". Bot Zalo **PyloS** (repo [PyloS](https://github.com/roemnao/PyloS), một hệ thống **độc lập**) nhận ra yêu cầu và gọi web này. Web **ghi thẳng vào Google Lịch của từng người được giao**, không cần họ mở web.
+2. **Quản lý thời gian cho từng người:** lịch (tháng/tuần, kèm Google Lịch), công việc (ma trận Eisenhower), đề xuất từ AI Gemini (dán văn bản → lịch/việc), nguồn tự động (ICS, trang web), Pomodoro. Mỗi người chỉ thấy dữ liệu của chính mình.
 
-Chạy được trên **Vercel (miễn phí)** hoặc trên máy cá nhân.
+Chạy trên **Vercel (miễn phí)** hoặc trên máy cá nhân. Web **không chạy trên máy ảo** và không có mục quản lý máy ảo. Máy ảo (VPS) là chuyện của PyloS.
 
-## Cách hoạt động: một chiều
+## Cách hoạt động
 
 ```
-Nhóm Zalo ─► PyloS (bộ lọc + agent): "giao lịch cho @A, @B"
-          ─► web (bot lịch): ghi lệnh thêm / sửa / xoá vào hàng của A và B + ghi log
-          ─► web app của A, B chỉ NHẬN lệnh của chính mình rồi ghi vào Google Lịch ngay trong trình duyệt
+Nhóm Zalo ─► PyloS ──(một khoá, chỉ API giao lịch)──► web: ghi lệnh vào hàng của từng người
+                                                        └─► máy chủ ghi ngay vào Google Lịch của người đó
 ```
 
-- **Tài khoản chính là Gmail.** Zalo chỉ là liên kết phụ, chứng minh bằng mã 6 số nhắn riêng cho bot.
-- Web app **không** đọc hay tìm được dữ liệu nào khác trên máy chủ, và **không** gửi lịch hay dữ liệu Google Lịch ngược lên. Quyền Google Lịch chỉ nằm trong trình duyệt của người dùng.
-- Người dùng **không đổi được model AI**. Model của agent, model của bộ lọc và mọi thông số của bot do chủ hệ thống chỉnh ở trang quản trị.
+- **Một kiểu đăng nhập: Google.** Khi đăng nhập, Google hỏi luôn quyền Google Lịch trong cùng một màn hình. Cho phép là xong, máy chủ giữ quyền (refresh token, **mã hoá AES-256-GCM**) và tự đồng bộ: **không phải bấm lại mỗi giờ, không cần mở web, không bị "out"**. Chỉ khi người dùng tự gỡ quyền ở Google thì web hiện nút "Kết nối lại" (một cú bấm).
+- **Zalo chỉ là liên kết phụ**, chứng minh bằng mã 6 số nhắn riêng cho bot.
+- **PyloS và web chỉ có một kết nối:** giao / sửa / huỷ / xem lịch đã giao, liên kết Zalo, lịch/việc riêng của người nhắn (kèm `zaloUid`). PyloS **không** nhận cấu hình từ web, **không** gửi nhịp tim hay session lên web.
 
-## Tính năng
+## Phân quyền
 
-**Web app cho thành viên** (trang chủ của tên miền app riêng, xem mục *Tên miền* bên dưới; cài được lên màn hình điện thoại như ứng dụng):
-- Đăng nhập Gmail (phải đồng ý Điều khoản dịch vụ và Chính sách quyền riêng tư; khi điều khoản đổi phiên bản, app hỏi đồng ý lại).
-- Liên kết Zalo: lấy mã 6 số (10 phút, dùng một lần, tối đa 5 mã/giờ), nhắn riêng mã đó cho acc bot.
-- Kết nối Google Lịch, tự lấy lệnh mỗi phút khi app đang mở và ghi thêm / sửa / xoá vào lịch chính. Mỗi lịch có ID cố định nên chạy lại không bị trùng.
-- Lịch sử các lệnh đã nhận, chỉ lưu trên máy đó. Gỡ liên kết Zalo, đăng xuất, xoá tài khoản ngay trong app.
+| Vai trò | Sử dụng bình thường | Quản lý bot lịch | Tài khoản người dùng |
+|---|:-:|:-:|:-:|
+| **Owner** | ✔ | ✔ | xem + cấp quyền, gỡ Zalo, xoá |
+| **Technician** | ✔ | ✔ | chỉ xem |
+| **User** | ✔ | ✘ | ✘ |
 
-**Trang quản trị cho chủ hệ thống** (tên miền quản trị), mục **Hệ thống**:
-- **Thành viên:** link web app để gửi cho mọi người, danh sách thành viên (Zalo đã liên kết chưa, lần cuối app hỏi lệnh), gỡ Zalo, xoá tài khoản, giới hạn email / tên miền được tạo tài khoản, link mở chat với bot.
-- **Nhật ký bot lịch:** mỗi lệnh thêm / sửa / xoá: lúc nào, nhóm nào, ai giao, ai nhận, ai chưa liên kết, và lúc app của từng người lấy lệnh về. Lọc theo ngày và người, tải CSV. Giữ 90 ngày.
-- **Cấu hình bot:** model của agent, model của bộ lọc, bật/tắt bộ lọc AI, tên gọi bot, giới hạn, ai được giao lịch, SYSTEM.md / MEMORY.md… Bot áp trong vòng một phút, không cần khởi động lại. Kèm trạng thái bot (nhịp tim, phiên bản, token hôm nay, lỗi gần nhất).
-- **Session:** chọn nhóm và ngày, xem từng bước tin → bộ lọc → agent → tool → bot lịch → câu trả lời.
-
-Phần quản lý thời gian của chủ web vẫn như trước: Tổng quan, Lịch (tháng/tuần), Công việc (ma trận Eisenhower), Đề xuất từ AI, Nguồn tự động (ICS, trang web), bot Zalo nhắc việc, link `.ics` cho điện thoại, đồng bộ 2 chiều với Google Lịch của chủ web.
-
-**Giao diện:** phong cách kiến trúc cổ đại (khối đá xám pha pastel, hoa văn meander, nút như cột đá), **nền tối mặc định**, có nút chuyển sang nền sáng (nhớ trong trình duyệt). Font tự lưu trong web, đủ dấu tiếng Việt.
+- **Sử dụng bình thường:** Tổng quan, Lịch, Công việc, Đề xuất, Nguồn, **Tài khoản** (hồ sơ, Google Lịch, Zalo, lịch được giao đã ghi, điều khoản, xoá tài khoản).
+- **Quản lý bot lịch** (Owner, Technician): tab *Nhật ký bot lịch*, *Cài đặt bot lịch*, *Bot Zalo nhắc việc*, *Kết nối AI agent* (khoá cho PyloS), *Khoá & trạng thái* (Gemini, token Zalo, Google OAuth, lưu trữ, cron).
+- **Tài khoản người dùng** (Owner, Technician): danh sách, trạng thái Google/Zalo, nhật ký phân quyền. Chỉ Owner đổi quyền; phải còn ít nhất một Owner.
+- Quyền được kiểm tra ở **máy chủ** mỗi yêu cầu (`src/roles.js`), đổi quyền có hiệu lực ngay.
+- **Owner đầu tiên:** đặt biến `OWNER_EMAILS` (Gmail của bạn, cách nhau dấu phẩy), đăng nhập bằng Gmail đó. Đây cũng là đường cứu hộ khi mất hết Owner.
 
 ## 🚀 Đưa lên Vercel
-1. **Tạo project:** vào https://vercel.com/new, đăng nhập bằng GitHub, chọn repo `quanlythoigian` rồi bấm **Import**. Không cần đổi cài đặt build.
-2. **Thêm biến môi trường** trước khi bấm Deploy (mục *Environment Variables*):
+
+1. **Sao lưu trước** nếu đang có dữ liệu: `UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... node scripts/backup.mjs`.
+2. **Tạo project:** https://vercel.com/new → repo `quanlythoigian` → Import.
+3. **Biến môi trường** (Settings → Environment Variables, đổi xong phải **Redeploy**):
 
    | Tên | Giá trị |
    |---|---|
-   | `GEMINI_API_KEY` | key Gemini (https://aistudio.google.com/apikey) |
-   | `ZALO_BOT_TOKEN` | token bot Zalo (nếu dùng bot nhắc việc của web) |
+   | `OWNER_EMAILS` | Gmail của bạn |
+   | `TOKEN_ENC_KEY` | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. **Đừng đổi về sau** (đổi là mọi người phải kết nối lại Google Lịch). Production và Preview dùng khoá khác nhau |
+   | `CRON_SECRET` | chuỗi ngẫu nhiên dài, không dấu cách và ký tự đặc biệt |
+   | `PRIMARY_HOST` | tên miền chính, vd `iforgotmywayhome.vercel.app` |
+   | `GEMINI_API_KEY`, `ZALO_BOT_TOKEN` | (hoặc nhập trên web ở *Khoá & trạng thái*) |
 
-   Bấm **Deploy**.
-3. **Thêm nơi lưu dữ liệu (bắt buộc, miễn phí):** trong project, vào tab **Storage**, chọn **Create Database**, chọn **Upstash for Redis** (gói Free), rồi **Connect** vào project. Sau đó vào tab **Deployments**, bấm **⋯** ở bản mới nhất và chọn **Redeploy**.
-   > Tài khoản thành viên, hàng lệnh, log bot lịch và session đều nằm trong Upstash. Không có bước này, dữ liệu mất mỗi khi Vercel khởi động lại.
-4. **Tạo tài khoản quản trị:** mở web, nhập tên đăng nhập và mật khẩu ở màn hình **Chào mừng**. Người tạo đầu tiên là chủ web.
-5. **Tách tên miền cho web app** (mục dưới), để người dùng chỉ thấy app, còn trang quản trị ở tên miền khác.
-6. **Kết nối Google** (mục dưới) để có đăng nhập Gmail và web app.
-7. **Nối bot Zalo PyloS** (mục dưới) để giao lịch trong nhóm.
+   **Môi trường Preview** nên đặt thêm `KV_PREFIX=qltg-preview:` và `STORAGE_KEY=quanlythoigian-preview:db` để bản thử không đụng dữ liệu thật.
+4. **Upstash Redis (bắt buộc, miễn phí):** tab **Storage → Create Database → Upstash for Redis → Connect**, rồi Redeploy.
+5. **Google** (mục dưới), **cron** (mục dưới), **nối PyloS** (mục dưới).
 
-Mỗi lần có code mới trên nhánh chính, Vercel tự deploy lại.
+## 🔑 Google: đăng nhập + Google Lịch
 
-## 🌐 Tên miền: app người dùng và trang quản trị
-Một project Vercel phục vụ hai tên miền: **tên miền app** cho mọi người (web app ở trang chủ) và **tên miền quản trị** cho bạn. Hai bên dùng chung database và code, nhưng:
-- Tên miền app chỉ có web app và API của thành viên. Trang quản trị, API quản trị, đăng nhập quản trị không có ở đây.
-- Tên miền quản trị không có API của thành viên; link `/app/` cũ tự chuyển sang tên miền app.
-- Bot Zalo (`/api/agent/…`), webhook Zalo, cron dùng được ở cả hai.
-- Mỗi tên miền có cookie đăng nhập riêng.
+1. https://console.cloud.google.com → tạo project, bật **Google Calendar API**.
+2. **Google Auth Platform → Branding:** *App name* `iforgotmywayhome`, email hỗ trợ, link `https://<tên miền>/privacy.html` và `/terms.html`.
+3. **Data access → Add or remove scopes:** `openid`, `email`, `profile`, `https://www.googleapis.com/auth/calendar.events`.
+4. **Audience: External, rồi bấm _Publish app_ (In production).** ⚠️ Nếu để *Testing*, quyền lâu dài của **mọi người hết hạn sau 7 ngày** và họ bị bắt kết nối lại. Chưa xác minh vẫn dùng được tối đa **100 người** (màn hình "Google hasn't verified this app": Nâng cao → Đi tới). Quá 100 người thì gửi Google xác minh quyền `calendar.events` (cần video demo, chính sách quyền riêng tư).
+5. **Clients → Create client → Web application:**
+   - *Authorized JavaScript origins:* `https://<tên miền chính>`
+   - *Authorized redirect URIs:* `https://<tên miền chính>/api/google/callback`
+   (Hai dòng này có sẵn để chép ở *Quản lý bot lịch → Khoá & trạng thái → Google*.)
+6. Dán **Client ID** và **Client secret** vào đó rồi Lưu.
 
-Cách bật (gợi ý: giữ `quanlythoigian-azure.vercel.app` cho quản trị, nên không phải đăng ký lại webhook Zalo, cron-job, Google hay địa chỉ trong PyloS):
-1. Vercel → project → **Settings → Domains** → **Add** tên miền cho app, ví dụ `iforgotmywayhome.vercel.app` (tên `*.vercel.app` miễn phí nếu còn trống; dùng tên miền riêng của bạn cũng được).
-2. **Settings → Environment Variables** → thêm `APP_HOST` = tên miền đó (vd `iforgotmywayhome.vercel.app`) → **Deployments → Redeploy**.
-3. Google Cloud → Client: thêm **Authorized JavaScript origin** `https://<tên miền app>` và **Authorized redirect URI** `https://<tên miền app>/api/google/callback` (giữ redirect URI của tên miền quản trị). Hai dòng này có sẵn để sao chép ở trang quản trị → Cài đặt → Khoá API → Google.
-4. Gửi mọi người link `https://<tên miền app>/` (có ở Hệ thống → Thành viên). Bạn vẫn vào trang quản trị ở tên miền quản trị.
+Mẫu giải trình khi Google hỏi về scope: *Web ghi lịch được giao trong nhóm Zalo vào Google Lịch của chính người dùng (thêm, sửa, xoá sự kiện do web tạo) và hiện lịch của họ trên web. `calendar.readonly` không ghi được; `calendar.events` là quyền hẹp nhất cho phép ghi sự kiện. Quyền được lưu mã hoá, không chia sẻ, không dùng quảng cáo hay huấn luyện AI; người dùng ngắt được bất cứ lúc nào.*
 
-Chưa đặt `APP_HOST` thì dùng chung một tên miền: trang quản trị ở `/`, web app ở `/app/`.
+## ⏰ Cron (bắt buộc để lịch lỗi tạm thời được ghi bù)
 
-## 🔑 Google: đăng nhập Gmail và Google Lịch
-Cần một OAuth Client miễn phí của Google:
-1. Vào https://console.cloud.google.com, tạo project và bật **Google Calendar API**.
-2. Vào **Google Auth Platform → Branding**: đặt *App name* là **iforgotmywayhome**, điền email hỗ trợ, và dán link **Chính sách quyền riêng tư** `https://<tên-web>.vercel.app/privacy.html` và **Điều khoản** `https://<tên-web>.vercel.app/terms.html`.
-3. Mục **Data access** → **Add or remove scopes**: thêm `openid`, `email`, `profile` và `https://www.googleapis.com/auth/calendar.events`.
-4. Mục **Audience**: chọn **External**.
-   - Quyền `calendar.events` là quyền nhạy cảm. Khi chưa gửi Google xác minh, ứng dụng tối đa **100 test user**: thêm Gmail của từng thành viên vào danh sách *Test users*. Khi đăng nhập, Google có thể cảnh báo "ứng dụng chưa được xác minh": bấm **Nâng cao** rồi **Tiếp tục**.
-   - Muốn mở cho nhiều người hơn, bấm **Publish app** và gửi Google xác minh.
-5. Mục **Clients → Create client**, loại **Web application**:
-   - **Authorized JavaScript origins:** địa chỉ của web app, vd `https://<tên miền app>` (web app ghi Google Lịch ngay trong trình duyệt nên cần dòng này).
-   - **Authorized redirect URIs:** `https://<tên miền quản trị>/api/google/callback`, và nếu đã tách tên miền thì thêm `https://<tên miền app>/api/google/callback`. Các dòng này có sẵn trong Cài đặt → Khoá API → Google để sao chép.
-6. Dán **Client ID** và **Client secret** vào **Cài đặt → Khoá API → Google**, rồi bấm Lưu.
-
-Chủ web vẫn dùng được các tính năng cũ: đăng nhập trang quản trị bằng Google, đồng bộ 2 chiều với Google Lịch của chính mình (Cài đặt → Google Lịch).
-
-## 👥 Mời mọi người dùng web app
-1. Trang quản trị → **Hệ thống → Thành viên**: điền **tên bot trên Zalo** và **link mở chat với bot** (`https://zalo.me/<số điện thoại acc bot>`), rồi chép link web app (vd `https://iforgotmywayhome.vercel.app/`) gửi cho mọi người. Muốn giới hạn ai được tạo tài khoản, điền danh sách email hoặc tên miền (`an@gmail.com, @congty.vn`).
-2. Mỗi người mở link, tick đồng ý điều khoản, **Đăng nhập bằng Google**.
-3. Bấm **Lấy mã liên kết**, nhắn riêng 6 số đó cho acc bot trên Zalo. App tự nhận ra khi đã liên kết.
-4. Bấm **Kết nối Google Lịch**.
-
-Lưu ý:
-- **App phải đang mở** (máy tính hoặc điện thoại) thì lịch mới được ghi; lệnh chưa lấy được chờ tối đa **30 ngày**.
-- Quyền Google Lịch trong trình duyệt hết hạn sau khoảng **1 giờ**. Khi có lịch mới mà quyền đã hết, app hiện nút **Cập nhật Google Lịch**: bấm là xong (không phải tick lại). Nếu trình duyệt chặn cửa sổ bật lên, hãy cho phép trang này mở cửa sổ.
-- Người được giao khi chưa liên kết Zalo sẽ không nhận lịch đó; bot báo tên họ kèm link app trong nhóm. Sau khi họ liên kết, nhờ bot sửa lịch để giao lại.
+Vercel miễn phí chỉ cron 1 lần/ngày. Tạo job miễn phí ở https://cron-job.org: URL `https://<tên miền>/api/cron?key=<CRON_SECRET>`, GET, **mỗi 5 phút**, timeout 30 giây. Cron chạy lại lệnh Google bị lỗi tạm thời (mạng, Google quá tải), đồng bộ nguồn và Google Lịch theo lô (tối đa 20 người/lần, xoay vòng), gửi nhắc việc Zalo. Lịch được giao **vẫn được ghi ngay lúc bot giao**; cron chỉ là lưới an toàn.
 
 ## 🤖 Nối bot Zalo PyloS
-1. Trang quản trị → **Cài đặt → Kết nối AI agent → Tạo khoá cho agent**, chép khoá.
-2. Trên máy chạy PyloS, điền vào `userdata/config/settings.env` (hoặc giao diện quản lý của PyloS):
+
+1. Đăng nhập (Owner hoặc Technician) → **Quản lý bot lịch → Kết nối AI agent → Tạo khoá**, chép khoá.
+2. Trong `settings.env` của PyloS (máy Windows và VPS):
    ```
-   SCHEDULE_API_URL=https://<tên miền quản trị>
+   SCHEDULE_API_URL=https://<tên miền>
    SCHEDULE_API_KEY=<khoá vừa tạo>
    ```
-3. Khởi động lại bot. Trang **Hệ thống → Cấu hình bot** hiện *Đang chạy* sau khoảng một phút.
+3. Khởi động lại PyloS. Mô tả API: `/api/agent/openapi.json`.
 
-Từ đó:
-- Bot nhận thông số ở **Cấu hình bot** (khoá bí mật như key Gemini, token Zalo, phiên đăng nhập Zalo **không bao giờ** lên web; chúng chỉ nằm trên máy chạy bot, và bot cũng từ chối nhận nếu có ai gửi xuống).
-- Bot gửi nhịp tim mỗi phút và gửi session (tắt được ở **Cấu hình bot → Session**, vì việc này đưa nội dung chat lên Upstash; mặc định giữ 14 ngày).
-- Trong nhóm: "roemnao giao @An @Bình họp 9h mai", "dời cuộc họp lúc nãy sang 10h", "huỷ cuộc họp lúc nãy". Xem README của PyloS.
-
-API cho agent (xác thực `Authorization: Bearer <khoá>`; mô tả OpenAPI ở `/api/agent/openapi.json`):
-
-| API | Việc |
+| API (xác thực `Authorization: Bearer <khoá>`) | Việc |
 |---|---|
-| `POST /api/agent/zalo-link` `{code, zaloUid, zaloName}` | liên kết Zalo của người gửi mã với Gmail của họ |
-| `POST /api/agent/assign` `{title, start, end?, allDay?, note?, assignees:[{zaloUid, name}], source}` | giao lịch: lệnh *thêm* cho từng người đã liên kết; trả `{eventId, assigned, unlinked, appUrl}` |
-| `PATCH /api/agent/assign/:id` `{…, assignees? \| add? \| remove?}` | sửa: người đã nhận được lệnh *sửa*, người mới nhận *thêm*, người bị bỏ nhận *xoá* |
-| `DELETE /api/agent/assign/:id` | huỷ: lệnh *xoá* cho mọi người đã nhận |
-| `GET /api/agent/assign/:id` | tình trạng: ai đã liên kết, app của ai đã lấy lệnh |
-| `POST /api/agent/device-login`, `GET /api/agent/device-login/:mã` | đăng nhập trang quản lý bot bằng Gmail: bot xin mã, chủ web mở `?device=<mã>` ở web app và bấm Cho phép, bot hỏi lại (`isAdmin` = Gmail trùng Gmail đã liên kết vào tài khoản quản trị; mã dùng một lần, hết hạn sau 10 phút) |
-| `GET /api/agent/config`, `POST /api/agent/heartbeat` | thông số bot, nhịp tim (trả cấu hình mới nếu có) |
-| `POST /api/agent/sessions` `{events:[…]}` | session bộ lọc ↔ agent |
-| `POST /api/agent/message`, `GET /api/agent/agenda`, `POST /api/agent/events`, `GET/POST /api/agent/tasks`, `PATCH /api/agent/tasks/:id` | lịch riêng của chủ web (như trước) |
+| `POST /api/agent/zalo-link` `{code, zaloUid, zaloName}` | liên kết Zalo của người gửi mã với tài khoản Google của họ |
+| `POST /api/agent/assign` `{title, start, end?, allDay?, note?, assignees:[{zaloUid, name}], source}` | giao lịch; ghi vào Google Lịch của từng người đã liên kết; trả `{eventId, assigned, unlinked, appUrl}` |
+| `PATCH /api/agent/assign/:id` · `DELETE …` · `GET …` | sửa (người mới nhận lệnh thêm, người bị bỏ bị xoá khỏi Google Lịch), huỷ, xem tình trạng |
+| `POST /api/agent/events`, `GET/POST /api/agent/tasks`, `PATCH …/tasks/:id`, `GET …/agenda`, `POST …/message` | lịch / việc **riêng** của người nhắn, bắt buộc kèm `zaloUid` (chưa liên kết → 404 kèm `appUrl`) |
+| `config`, `heartbeat`, `sessions`, `device-login` | **đã bỏ**, trả `410` (PyloS đã tách khỏi web) |
 
-## 🛡️ Dữ liệu và điều khoản
-- **Lưu ở đâu:** Upstash Redis của chủ web. Mỗi người một khoá riêng; hàng lệnh 30 ngày; log bot lịch và lịch đã giao 90 ngày; session mặc định 14 ngày (tối đa 90); hồ sơ tới khi người dùng xoá tài khoản.
-- **Web app** chỉ có các API của chính người đăng nhập (`/api/me…`): xem hồ sơ, lấy mã Zalo, gỡ Zalo, lấy lệnh mới, đồng ý điều khoản, xoá tài khoản. Không có API liệt kê, tìm kiếm, hay ghi lịch ngược lên.
-- **Điều khoản dịch vụ** (`/terms.html`) và **Chính sách quyền riêng tư** (`/privacy.html`) là **bản mẫu**, không phải tư vấn pháp lý: hãy đọc và sửa cho đúng cách bạn vận hành. Khi sửa, đổi số phiên bản trong hai trang và `TERMS_VERSION` trong `src/members.js` (có kiểm thử bắt hai chỗ phải khớp) để mọi người được hỏi đồng ý lại.
+## 🔄 Chuyển từ bản cũ (một tài khoản quản trị mật khẩu)
 
-## 🤖 Dùng chung bot Zalo với AI agent khác
-Mỗi bot Zalo chỉ có **một** địa chỉ nhận tin (webhook). Nếu bot nhắc việc của web đang gắn với một AI agent khác (n8n, Make, bot tự viết…):
-1. Vào **Cài đặt → Bot Zalo → Ai nhận tin nhắn của bot?**, chọn **AI agent của tôi**. Web sẽ **chỉ gửi** nhắc việc và tóm tắt, không giành webhook của agent.
-2. Nhập ID Zalo của bạn để nhận nhắc việc. Hoặc để agent chuyển tin `/ketnoi <mã>` kèm `chatId` sang `POST /api/agent/message`.
+- Đăng nhập mật khẩu `APP_PASSWORD` / tài khoản quản trị **không còn**. Đặt `OWNER_EMAILS`, đăng nhập bằng Google.
+- **Dữ liệu cũ của chủ web** (lịch, việc, đề xuất, nguồn, Google Lịch, ghép nối Zalo nhắc việc) tự chuyển sang tài khoản Owner ở lần đăng nhập đầu của Owner (hoặc cron, hoặc nút *Chuyển dữ liệu cũ* ở *Khoá & trạng thái*). **Không xoá bản cũ** để quay lại được; dọn bằng `node scripts/cleanup-w5.mjs` sau khi ổn.
+- Mọi người được hỏi đồng ý điều khoản lại (đổi phiên bản `2026-11-01`) và nên đăng nhập lại để cho phép Google Lịch (quyền trước đây nằm trong trình duyệt, không chuyển sang máy chủ được). Lịch đã ghi trước đây không bị tạo trùng (cùng ID cố định).
+- Tên miền cũ (`quanlythoigian-azure…`) vẫn nhận API của PyloS, webhook Zalo, cron; mọi trang chuyển (308) về `PRIMARY_HOST`.
 
 ## 💻 Chạy trên máy
+
 Cần Node.js ≥ 20.12.
 ```bash
 npm install
-cp .env.example .env     # điền GEMINI_API_KEY, ZALO_BOT_TOKEN
-npm start                # quản trị: http://localhost:3000, web app: http://localhost:3000/app/
-                         # thử hai tên miền: đặt APP_HOST=app.localhost, web app ở http://app.localhost:3000
-npm test                 # kiểm thử
-npm run test:e2e         # kiểm thử web app bằng trình duyệt thật (cần Playwright + Chromium), Google giả lập
+cp .env.example .env     # điền OWNER_EMAILS, GEMINI_API_KEY, Google Client...
+npm start                # http://localhost:3000
+npm test                 # kiểm thử đơn vị
+npm run test:e2e         # trình duyệt thật, 3 vai trò (cần Playwright + Chromium); SHOTS_DIR=thư-mục để lưu ảnh
 ```
-Trên máy, dữ liệu lưu ở `data/db.json` và `data/kv.json`. Bot Zalo nhắc việc chạy ở chế độ `polling`, nên không cần tên miền.
+Dữ liệu trên máy: `data/db.json`, `data/kv.json`. Google OAuth khi chạy máy cần thêm `http://localhost:3000/api/google/callback`.
 
-> ⚠️ **Không bao giờ commit key vào repo.** Key chỉ nằm trong `.env` trên máy hoặc trong Environment Variables của Vercel.
+> ⚠️ **Không bao giờ commit key vào repo.** Key chỉ nằm trong `.env` hoặc Environment Variables của Vercel.
 
-## 📋 Bảng lệnh
+## Biến môi trường
 
-| Lệnh | Tác dụng |
-|---|---|
-| `npm install` | Cài thư viện |
-| `npm start` | Chạy server (quản trị `http://localhost:3000`) |
-| `npm run dev` | Chạy và tự tải lại khi sửa code |
-| `npm test` | Kiểm thử đơn vị (`node --test`) |
-| `npm run test:e2e` | Kiểm thử web app bằng trình duyệt thật (cần Playwright + Chromium). Thêm `SHOTS_DIR=thư-mục` để lưu ảnh chụp |
-| `APP_HOST=app.localhost npm start` | Thử hai tên miền: app `http://app.localhost:3000`, quản trị `http://localhost:3000` |
-
-Trên Vercel: đổi biến môi trường (ví dụ `APP_HOST`) xong phải **Redeploy** (Deployments → ⋯ → Redeploy) thì mới có hiệu lực.
-
-Đặt quyền giao lịch cho bot (`ASSIGN_ALLOWED=owner|all`): đăng nhập trang quản trị → **Hệ thống** → nhóm **Quyền** → Lưu. Bot tự áp dụng trong tối đa 60 giây, không cần khởi động lại.
-
-Lệnh của bot Zalo (`/allow`, `/mode`, `/id`, `giao_lich`…) nằm trong README của PyloS, mục "Bảng lệnh".
-
-## Biến môi trường khác
 | Biến | Ý nghĩa | Mặc định |
 |---|---|---|
-| `APP_PASSWORD` | Đăng nhập trang quản trị bằng mật khẩu đặt sẵn, thay cho tài khoản tạo trên web | trống |
-| `ADMIN_USERNAME` | Tên đăng nhập đi kèm `APP_PASSWORD` | trống |
-| `GEMINI_MODEL` | Model Gemini để web tự trích lịch (không phải model của bot Zalo) | `gemini-3.1-flash-lite` |
+| `OWNER_EMAILS` | Gmail Owner (cũng là đường cứu hộ) | trống |
+| `TOKEN_ENC_KEY` | Khoá mã hoá quyền Google Lịch (base64, 32 byte) | trống (trên Vercel bắt buộc) |
+| `CRON_SECRET` | Bảo vệ `/api/cron?key=` | trống |
+| `PRIMARY_HOST` (cũ: `APP_HOST`) | Tên miền chính | trống: dùng host hiện tại |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`, `ZALO_BOT_TOKEN` | Có thể nhập trên web | trống |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Có thể nhập trên web | trống |
+| `KV_PREFIX`, `STORAGE_KEY` | Tiền tố khoá Redis (tách Preview/Production) | `qltg:`, `quanlythoigian:db` |
 | `APP_TIMEZONE` | Múi giờ | `Asia/Ho_Chi_Minh` |
-| `CRON_SECRET` | Bảo vệ `/api/cron` (cron-job.org gọi `/api/cron?key=...`) | trống |
-| `ZALO_WEBHOOK_SECRET` | Chuỗi bí mật webhook | tự sinh từ token |
-| `ZALO_CHAT_ID` | Cố định người nhận nhắc việc | dùng tài khoản đã `/ketnoi` |
-| `SYNC_INTERVAL_MINUTES` | Khoảng cách giữa các lần đồng bộ nguồn | 30 |
-| `REMIND_BEFORE_MINUTES` | Nhắc trước sự kiện bao nhiêu phút | 15 |
-| `DAILY_SUMMARY_HOUR` | Giờ gửi tóm tắt (để trống để tắt) | 7 |
-| `APP_HOST` | Tên miền riêng của web app (vd `iforgotmywayhome.vercel.app`); mọi tên miền khác là trang quản trị | trống: dùng chung một tên miền |
-| `KV_PREFIX` | Tiền tố khoá trong Redis (khi nhiều web dùng chung một Upstash) | `qltg:` |
+| `SYNC_INTERVAL_MINUTES`, `REMIND_BEFORE_MINUTES`, `DAILY_SUMMARY_HOUR` | Chu kỳ đồng bộ, nhắc, tóm tắt | 30, 15, 7 |
+| `ZALO_MODE`, `ZALO_WEBHOOK_SECRET`, `ZALO_CHAT_ID` | Bot Zalo nhắc việc của web | polling |
+
+## Giới hạn mỗi người (`src/limits.js`)
+Tối đa 5 nguồn (2 nguồn trang web), 2.000 lịch, 1.000 việc, 20 lần AI trích lịch mỗi ngày. Nguồn không được trỏ vào địa chỉ nội bộ.
 
 ## Cấu trúc
 ```
-api/index.js         điểm vào trên Vercel
-server.js            chạy trên máy (polling Zalo + cron mỗi phút)
-src/app.js           API Express: quản trị, thành viên (/api/me), agent (/api/agent), Google; chọn trang theo tên miền
-src/kv.js            kho khoá–giá trị (Upstash Redis hoặc file JSON) cho dữ liệu nhiều người
-src/members.js       thành viên: đăng nhập Gmail, điều khoản, mã liên kết Zalo, hàng lệnh một chiều
-src/calbot.js        bot lịch: giao / sửa / huỷ lịch cho người được tag
-src/calbot-log.js    log bot lịch (90 ngày, CSV)
-src/system.js        cấu hình bot Zalo, nhịp tim, session bộ lọc ↔ agent
-src/auth.js          tài khoản quản trị (mật khẩu băm scrypt, phiên đăng nhập)
-src/google.js        đăng nhập Google, đồng bộ Google Lịch của chủ web
-src/db.js            dữ liệu của chủ web (lịch, việc, đề xuất…)
-src/storage.js       Upstash Redis (REST, pipeline) hoặc file JSON
-src/gemini.js, sources.js, zalo.js, cron.js, time.js, config.js
-views/admin.html     trang quản trị; views/app.html: web app (gửi từ Express để chọn đúng theo tên miền)
-public/theme.css     giao diện chung iforgotmywayhome (+ theme.js: sáng/tối, fonts/: font tự lưu)
-public/admin/        JS, CSS của trang quản trị (admin.js, system.js: mục Hệ thống, style.css)
-public/app/          JS, CSS, biểu tượng của web app (app.js, sync.js: ghi Google Lịch); public/sw.js: chạy offline
-public/terms.html, privacy.html   điều khoản, chính sách (bản mẫu)
-test/                kiểm thử: npm test; test/e2e: npm run test:e2e
+api/index.js, server.js   điểm vào Vercel / chạy trên máy
+src/app.js                API Express: đăng nhập Google, /api/me (dữ liệu riêng), /api/admin (theo quyền), /api/agent (PyloS)
+src/roles.js              Owner / Technician / User và bảng quyền
+src/members.js            tài khoản, điều khoản, mã liên kết Zalo, hàng lệnh, đổi quyền + nhật ký
+src/userstore.js          dữ liệu riêng từng người (udata:<id>), Owner chính
+src/gtoken.js, gsync.js   quyền Google Lịch (mã hoá) và ghi lịch từ máy chủ
+src/calsync.js            áp lệnh thêm/sửa/xoá vào Google Lịch (ID cố định, không trùng)
+src/calbot.js, calbot-log.js   bot lịch: giao/sửa/huỷ lịch, nhật ký 90 ngày
+src/google.js, sources.js, gemini.js, zalo.js, cron.js, migrate.js, kv.js, storage.js
+views/app.html            một giao diện cho mọi người; public/app/*.js: main (sử dụng), account, admin-bot, admin-accounts
+scripts/backup.mjs, cleanup-w5.mjs   sao lưu Upstash, dọn dữ liệu cũ
+test/                     npm test (58 test); test/e2e: npm run test:e2e
+docs/KE-HOACH-CAP-NHAT-2026-11-01.md   kế hoạch cập nhật
 ```
 
 ## Giới hạn
-- Không đẩy thông báo khi app đang đóng (chưa có Web Push): lịch được ghi khi app mở lại.
-- Không đồng bộ ngược từ Google Lịch (cố ý: luồng là một chiều). Người dùng tự xoá lịch trên Google thì lần sửa sau của người giao sẽ tạo lại.
+- Không đẩy thông báo (chưa có Web Push).
 - Quá 100 người dùng cần gửi Google xác minh quyền `calendar.events`.
-- Gói miễn phí của Upstash có giới hạn số lệnh mỗi tháng. App chỉ tốn một lệnh mỗi lần hỏi khi không có gì mới (mỗi phút khi đang mở); nhịp tim của bot tốn khoảng 3.000 lệnh/ngày.
+- Gói miễn phí của Upstash có giới hạn lệnh mỗi tháng: theo dõi mục *Usage* vài ngày đầu; tăng chu kỳ cron nếu cần.
+- Bot Zalo nhắc việc của web (nhắc trước giờ, tóm tắt sáng) chỉ nhắc cho Owner chính.

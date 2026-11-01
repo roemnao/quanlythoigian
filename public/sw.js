@@ -1,8 +1,8 @@
 // Service worker của web app: giao diện mở được cả khi mạng chập chờn. Không bao giờ lưu dữ liệu /api.
 // Đăng ký với scope "/" (web app ở tên miền riêng) hoặc "/app/" (dùng chung tên miền với trang quản trị).
-const CACHE = 'ifmwh-app-v2';
+const CACHE = 'ifmwh-app-v3'; // đổi số này mỗi khi giao diện đổi, để máy đã cài app bỏ bản cũ
 const BASE = new URL(self.registration.scope).pathname;
-const SHELL = [BASE, `${BASE}manifest.webmanifest`, '/app/app.js', '/app/sync.js', '/app/app.css', '/theme.css', '/theme.js', '/icon.svg'];
+const SHELL = [BASE, '/manifest.webmanifest', '/app/main.js', '/app/ui.js', '/app/account.js', '/app/admin-bot.js', '/app/admin-accounts.js', '/app/app.css', '/theme.css', '/theme.js', '/icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
