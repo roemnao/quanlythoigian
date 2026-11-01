@@ -19,7 +19,7 @@ export async function renderAccount(root, ctx) {
   const profile = h('section', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', {}, 'Hồ sơ')),
     h('p', {}, h('b', {}, me.name), ' · ', me.email, ' ', h('span', { class: `badge ${me.role === 'owner' ? 'gold' : me.role === 'technician' ? 'lake' : 'muted'}` }, ROLE_LABEL[me.role] || me.role)),
-    h('div', { class: 'row' }, h('button', { class: 'btn sm', type: 'button', onclick: () => ctx.signOut() }, icon('logout'), 'Đăng xuất')));
+    h('div', { class: 'row' }, h('button', { class: 'btn sm', type: 'button', onclick: () => ctx.signOut() }, icon('logout'), 'Đăng xuất (mọi thiết bị)')));
 
   // ----- Google Lịch -----
   const g = me.google;

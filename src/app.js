@@ -20,7 +20,7 @@ import { dayKey, TZ, zonedMidnight } from './time.js';
 import { kv } from './kv.js';
 import {
   acceptTerms, createZaloCode, deleteMember, getMember, linkZalo, listMembers, memberCookieValue, memberSettings,
-  membersByZalo, publicMember, readAudit, saveMemberSettings, setGoogleStatus, setRole, signInMember, TERMS_VERSION, touchSeen, unlinkZalo,
+  membersByZalo, publicMember, readAudit, revokeSessions, saveMemberSettings, setGoogleStatus, setRole, signInMember, TERMS_VERSION, touchSeen, unlinkZalo,
   verifyMemberCookie,
 } from './members.js';
 import { assign, cancel as cancelAssignment, status as assignmentStatus, update as updateAssignment } from './calbot.js';
@@ -36,7 +36,22 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isVercel = Boolean(process.env.VERCEL);
 export const app = express();
 app.set('trust proxy', true);
-app.use(express.json({ limit: '1mb' }));
+app.disable('x-powered-by');
+app.use(express.json({ limit: '200kb' }));
+// Header bảo mật: chặn nhúng trang vào iframe (clickjacking), chặn đoán kiểu file, chỉ chạy script của chính web.
+export const SECURITY_HEADERS = {
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; "
+    + "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+};
+app.use((req, res, next) => {
+  res.set(SECURITY_HEADERS);
+  if (req.secure) res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
 
 // ----- Một tên miền chính (PRIMARY_HOST, cũ là APP_HOST) -----
 // Mọi trang chuyển (308) về tên miền chính. Bot Zalo (PyloS), webhook Zalo, cron, link .ics chạy được ở mọi tên miền
@@ -61,6 +76,39 @@ const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).cat
 });
 const fail = (status, message, extra) => Object.assign(new Error(message), { status, extra });
 const pick = (obj, keys) => Object.fromEntries(keys.filter((k) => k in obj).map((k) => [k, obj[k]]));
+// Kiểm kiểu và độ dài dữ liệu người dùng gửi lên: chuỗi quá dài, ngày sai, kiểu lạ đều bị từ chối (tránh phình kho và làm hỏng đồng bộ Google).
+const MAX = { title: 200, note: 2000, goal: 200 };
+function cleanText(v, field, max) {
+  if (typeof v !== 'string') throw fail(400, `"${field}" phải là chữ`);
+  if (v.length > max) throw fail(400, `"${field}" dài quá ${max} ký tự`);
+  return v;
+}
+function cleanDate(v, field, { nullable = false } = {}) {
+  if (v == null || v === '') { if (nullable) return null; throw fail(400, `Thiếu "${field}"`); }
+  const t = typeof v === 'string' || typeof v === 'number' ? new Date(v) : null;
+  if (!t || Number.isNaN(t.getTime()) || t.getUTCFullYear() < 1970 || t.getUTCFullYear() > 2200) throw fail(400, `"${field}" không phải ngày giờ hợp lệ`);
+  return t.toISOString();
+}
+const cleanBool = (v, field) => { if (typeof v !== 'boolean') throw fail(400, `"${field}" phải là true/false`); return v; };
+const cleanQuadrant = (v) => { const n = Number(v); if (![1, 2, 3, 4].includes(n)) throw fail(400, '"quadrant" phải là 1, 2, 3 hoặc 4'); return n; };
+export function cleanEvent(input) {
+  const out = {};
+  if ('title' in input) out.title = cleanText(input.title, 'title', MAX.title).trim();
+  if ('note' in input) out.note = cleanText(input.note ?? '', 'note', MAX.note);
+  if ('start' in input) out.start = cleanDate(input.start, 'start');
+  if ('end' in input) out.end = cleanDate(input.end, 'end', { nullable: true });
+  if ('allDay' in input) out.allDay = cleanBool(input.allDay, 'allDay');
+  return out;
+}
+export function cleanTask(input) {
+  const out = {};
+  if ('title' in input) out.title = cleanText(input.title, 'title', MAX.title).trim();
+  if ('note' in input) out.note = cleanText(input.note ?? '', 'note', MAX.note);
+  if ('deadline' in input) out.deadline = cleanDate(input.deadline, 'deadline', { nullable: true });
+  if ('quadrant' in input) out.quadrant = cleanQuadrant(input.quadrant);
+  if ('done' in input) out.done = cleanBool(input.done, 'done');
+  return out;
+}
 const findOr404 = (list, id) => list.find((x) => x.id === id) || (() => { throw fail(404, 'Không tìm thấy'); })();
 const baseUrl = (req) => `${req.protocol}://${req.get('host')}`;
 // Link web app gửi cho mọi người.
@@ -163,10 +211,8 @@ app.get('/api/agent/tasks', wrap(async (req, res) => {
 }));
 app.post('/api/agent/events', wrap(async (req, res) => {
   const user = await agentMember(req);
-  const e = { id: newId(), allDay: false, note: '', origin: 'agent', ...pick(req.body || {}, ['title', 'start', 'end', 'allDay', 'note']) };
-  if (!e.title || !e.start || Number.isNaN(new Date(e.start).getTime())) throw fail(400, 'Cần "title" và "start" (ISO 8601, vd 2026-10-30T14:00:00+07:00)');
-  e.start = new Date(e.start).toISOString();
-  if (e.end) e.end = new Date(e.end).toISOString();
+  if (!req.body?.title || !req.body?.start) throw fail(400, 'Cần "title" và "start" (ISO 8601, vd 2026-10-30T14:00:00+07:00)');
+  const e = { id: newId(), allDay: false, note: '', origin: 'agent', ...cleanEvent(pick(req.body, ['title', 'start', 'end', 'allDay', 'note'])) };
   await mutateUser(user.id, (s) => {
     if (s.data.events.length >= LIMITS.events) throw fail(429, `Tối đa ${LIMITS.events} lịch mỗi người`);
     s.data.events.push(e);
@@ -177,9 +223,8 @@ app.post('/api/agent/events', wrap(async (req, res) => {
 app.post('/api/agent/tasks', wrap(async (req, res) => {
   const user = await agentMember(req);
   const t = { id: newId(), quadrant: 2, deadline: null, done: false, note: '', origin: 'agent', createdAt: new Date().toISOString(),
-    ...pick(req.body || {}, ['title', 'quadrant', 'deadline', 'note']) };
+    ...cleanTask(pick(req.body || {}, ['title', 'quadrant', 'deadline', 'note'])) };
   if (!t.title) throw fail(400, 'Cần "title"');
-  if (t.deadline) t.deadline = new Date(t.deadline).toISOString();
   await mutateUser(user.id, (s) => {
     if (s.data.tasks.length >= LIMITS.tasks) throw fail(429, `Tối đa ${LIMITS.tasks} việc mỗi người`);
     s.data.tasks.push(t);
@@ -190,8 +235,9 @@ app.patch('/api/agent/tasks/:id', wrap(async (req, res) => {
   const user = await agentMember(req);
   res.json(await mutateUser(user.id, (s) => {
     const t = findOr404(s.data.tasks, req.params.id);
-    Object.assign(t, pick(req.body || {}, ['title', 'quadrant', 'deadline', 'done', 'note']));
-    if ('done' in (req.body || {})) t.doneAt = req.body.done ? new Date().toISOString() : null;
+    const patch = cleanTask(pick(req.body || {}, ['title', 'quadrant', 'deadline', 'done', 'note']));
+    Object.assign(t, patch);
+    if ('done' in patch) t.doneAt = patch.done ? new Date().toISOString() : null;
     return t;
   }));
 }));
@@ -271,6 +317,8 @@ app.get('/api/agent/openapi.json', (req, res) => {
 // ----- Cron: Vercel Cron gửi "Authorization: Bearer <CRON_SECRET>"; cron-job.org dùng ?key= -----
 app.get('/api/cron', wrap(async (req, res) => {
   const secret = process.env.CRON_SECRET;
+  // Trên Vercel bắt buộc có CRON_SECRET: thiếu thì từ chối, để người ngoài không gọi cron (tốn lượt Gemini, Upstash) được.
+  if (!secret && isVercel) throw fail(503, 'Chưa đặt CRON_SECRET trên Vercel');
   if (secret) {
     const given = (req.get('Authorization') || '').replace(/^Bearer\s+/i, '') || req.query.key || '';
     if (!safeEqual(given, secret)) throw fail(401, 'Sai CRON_SECRET');
@@ -416,12 +464,19 @@ app.get('/api/me/history', need('use'), wrap(async (req, res) => {
   touchSeen(req.me.id).catch(() => {});
   res.json({ history: await readHistory(req.me.id) });
 }));
-app.post('/api/me/logout', (req, res) => {
+// Đăng xuất: huỷ mọi phiên của tài khoản (cookie đã bị lấy cắp cũng hết dùng được).
+app.post('/api/me/logout', wrap(async (req, res) => {
+  const id = await verifyMemberCookie(readCookie(req, MEMBER_COOKIE));
+  if (id) await revokeSessions(id);
   res.clearCookie(MEMBER_COOKIE, { path: '/' });
   res.json({ ok: true });
-});
+}));
 app.delete('/api/me', wrap(async (req, res) => {
-  await deleteMember(await memberId(req));
+  const me = await currentMember(req);
+  if (me.role === 'owner' && (await listMembers()).filter((m) => m.role === 'owner').length <= 1) {
+    throw fail(409, 'Bạn là Owner duy nhất. Hãy chuyển quyền Owner cho người khác trước khi xoá tài khoản.');
+  }
+  await deleteMember(me.id);
   res.clearCookie(MEMBER_COOKIE, { path: '/' });
   res.json({ ok: true });
 }));
@@ -453,8 +508,8 @@ app.get('/api/me/state', need('use'), wrap(async (req, res) => {
 const EVENT_FIELDS = ['title', 'start', 'end', 'allDay', 'note'];
 const READ_ONLY = { ics: 'Sự kiện từ nguồn ICS chỉ sửa được ở lịch gốc', google: 'Sự kiện từ Google Lịch hãy sửa trên Google Lịch' };
 app.post('/api/me/events', need('use'), wrap(async (req, res) => {
-  const e = { id: newId(), allDay: false, note: '', origin: 'manual', ...pick(req.body || {}, EVENT_FIELDS) };
-  if (!e.title || !e.start) throw fail(400, 'Cần tiêu đề và thời gian bắt đầu');
+  if (!req.body?.title || !req.body?.start) throw fail(400, 'Cần tiêu đề và thời gian bắt đầu');
+  const e = { id: newId(), allDay: false, note: '', origin: 'manual', ...cleanEvent(pick(req.body, EVENT_FIELDS)) };
   await mutateUser(req.me.id, (s) => {
     if (s.data.events.length >= LIMITS.events) throw fail(429, `Tối đa ${LIMITS.events} lịch mỗi người`);
     s.data.events.push(e);
@@ -466,7 +521,9 @@ app.patch('/api/me/events/:id', need('use'), wrap(async (req, res) => {
   const out = await mutateUser(req.me.id, (s) => {
     const e = findOr404(s.data.events, req.params.id);
     if (READ_ONLY[e.origin]) throw fail(400, READ_ONLY[e.origin]);
-    Object.assign(e, pick(req.body || {}, EVENT_FIELDS));
+    const patch = cleanEvent(pick(req.body || {}, EVENT_FIELDS));
+    if ('title' in patch && !patch.title) throw fail(400, 'Tiêu đề không được trống');
+    Object.assign(e, patch);
     if (e.googleId) e.googleDirty = Date.now();
     return e;
   });
@@ -486,7 +543,7 @@ app.delete('/api/me/events/:id', need('use'), wrap(async (req, res) => {
 
 const TASK_FIELDS = ['title', 'quadrant', 'deadline', 'done', 'note'];
 app.post('/api/me/tasks', need('use'), wrap(async (req, res) => {
-  const t = { id: newId(), quadrant: 2, deadline: null, done: false, note: '', origin: 'manual', createdAt: new Date().toISOString(), ...pick(req.body || {}, TASK_FIELDS) };
+  const t = { id: newId(), quadrant: 2, deadline: null, done: false, note: '', origin: 'manual', createdAt: new Date().toISOString(), ...cleanTask(pick(req.body || {}, TASK_FIELDS)) };
   if (!t.title) throw fail(400, 'Cần tên công việc');
   await mutateUser(req.me.id, (s) => {
     if (s.data.tasks.length >= LIMITS.tasks) throw fail(429, `Tối đa ${LIMITS.tasks} việc mỗi người`);
@@ -497,8 +554,10 @@ app.post('/api/me/tasks', need('use'), wrap(async (req, res) => {
 app.patch('/api/me/tasks/:id', need('use'), wrap(async (req, res) => {
   res.json(await mutateUser(req.me.id, (s) => {
     const t = findOr404(s.data.tasks, req.params.id);
-    Object.assign(t, pick(req.body || {}, TASK_FIELDS));
-    if ('done' in (req.body || {})) t.doneAt = req.body.done ? new Date().toISOString() : null;
+    const patch = cleanTask(pick(req.body || {}, TASK_FIELDS));
+    if ('title' in patch && !patch.title) throw fail(400, 'Tên công việc không được trống');
+    Object.assign(t, patch);
+    if ('done' in patch) t.doneAt = patch.done ? new Date().toISOString() : null;
     return t;
   }));
 }));
@@ -509,11 +568,14 @@ app.delete('/api/me/tasks/:id', need('use'), wrap(async (req, res) => {
 
 app.put('/api/me/goals/:date', need('use'), wrap(async (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) throw fail(400, 'Ngày không hợp lệ');
-  await mutateUser(req.me.id, (s) => { s.data.goals[req.params.date] = (req.body?.goals || []).slice(0, 3).map((g) => String(g || '')); });
+  await mutateUser(req.me.id, (s) => { const goals = Array.isArray(req.body?.goals) ? req.body.goals : [];
+    s.data.goals[req.params.date] = goals.slice(0, 3).map((g) => String(g ?? '').slice(0, MAX.goal)); });
   res.json({ ok: true });
 }));
 app.post('/api/me/pomodoros', need('use'), wrap(async (req, res) => {
-  const p = { at: new Date().toISOString(), minutes: Number(req.body?.minutes) || 25, taskId: req.body?.taskId || null };
+  const minutes = Math.round(Number(req.body?.minutes));
+  const p = { at: new Date().toISOString(), minutes: minutes >= 1 && minutes <= 240 ? minutes : 25,
+    taskId: typeof req.body?.taskId === 'string' ? req.body.taskId.slice(0, 40) : null };
   await mutateUser(req.me.id, (s) => { s.data.pomodoros.push(p); s.data.pomodoros = s.data.pomodoros.slice(-2000); });
   res.json(p);
 }));
@@ -537,7 +599,9 @@ app.post('/api/me/suggestions/approve-all', need('use'), wrap(async (req, res) =
   res.json({ approved });
 }));
 app.post('/api/me/suggestions/:id/approve', need('use'), wrap(async (req, res) => {
-  const fields = pick(req.body || {}, ['title', 'start', 'end', 'deadline', 'quadrant', 'kind', 'note']);
+  const body = req.body || {};
+  const fields = { ...cleanEvent(pick(body, ['title', 'start', 'end', 'note'])), ...cleanTask(pick(body, ['deadline', 'quadrant'])) };
+  if ('kind' in body) { if (!['event', 'task'].includes(body.kind)) throw fail(400, '"kind" phải là event hoặc task'); fields.kind = body.kind; }
   const r = await mutateUser(req.me.id, (s) => s.approveSuggestion(req.params.id, fields));
   if (!r) throw fail(404, 'Không tìm thấy đề xuất');
   if (r.kind === 'event') kickGoogle(req.me.id);
@@ -554,8 +618,10 @@ app.post('/api/me/sources', need('use'), wrap(async (req, res) => {
   let u;
   try { u = new URL(String(url).trim().replace(/^webcal:/i, 'https:')); } catch { throw fail(400, 'URL không hợp lệ'); }
   if (!['http:', 'https:'].includes(u.protocol)) throw fail(400, 'Chỉ hỗ trợ http/https');
+  if (u.username || u.password) throw fail(400, 'URL không được chứa tên đăng nhập/mật khẩu');
+  if (u.href.length > 2000) throw fail(400, 'URL quá dài');
   if (isPrivateHost(u.hostname)) throw fail(400, 'Không dùng được địa chỉ nội bộ');
-  const src = { id: newId(), type, name: name || u.hostname, url: u.href, lastSync: null, lastError: null, lastHash: null };
+  const src = { id: newId(), type, name: (typeof name === 'string' && name.trim().slice(0, 80)) || u.hostname, url: u.href, lastSync: null, lastError: null, lastHash: null };
   await mutateUser(req.me.id, (s) => {
     if (s.data.sources.length >= LIMITS.sources) throw fail(429, `Tối đa ${LIMITS.sources} nguồn mỗi người`);
     if (type === 'web' && s.data.sources.filter((x) => x.type === 'web').length >= LIMITS.webSources) throw fail(429, `Tối đa ${LIMITS.webSources} nguồn trang web mỗi người (mỗi lần đồng bộ tốn một lượt Gemini)`);
@@ -653,6 +719,8 @@ app.put('/api/admin/keys', need('bot:write'), wrap(async (req, res) => {
     geminiApiKey: 'GEMINI_API_KEY', zaloBotToken: 'ZALO_BOT_TOKEN', geminiModel: 'GEMINI_MODEL',
     googleClientId: 'GOOGLE_CLIENT_ID', googleClientSecret: 'GOOGLE_CLIENT_SECRET',
   };
+  // Đổi ứng dụng đăng nhập Google là việc chỉ Owner được làm (ai giữ Client ID/Secret là người nhận quyền đăng nhập của mọi người).
+  if (('googleClientId' in body || 'googleClientSecret' in body) && !can(req.me, 'accounts:write')) throw fail(403, 'Chỉ Owner mới đổi được Google Client ID/Secret');
   const store = await Store.open();
   const settings = { ...store.data.settings };
   const changed = [];
@@ -728,6 +796,8 @@ const needZalo = () => { if (!zaloConfigured()) throw fail(400, 'Chưa cấu hì
 app.get('/api/admin/zalo/me', need('bot:write'), wrap(async (req, res) => { needZalo(); res.json(await getMe()); }));
 app.post('/api/admin/zalo/webhook-setup', need('bot:write'), wrap(async (req, res) => {
   needZalo();
+  // Địa chỉ webhook khác web này (Zalo sẽ gửi mọi tin nhắn về đó): chỉ Owner được đặt.
+  if (req.body?.baseUrl && !can(req.me, 'accounts:write')) throw fail(403, 'Chỉ Owner mới đặt được địa chỉ webhook khác');
   const base = String(req.body?.baseUrl || baseUrl(req)).replace(/\/$/, '');
   if (!base.startsWith('https://')) throw fail(400, 'Webhook cần địa chỉ https công khai');
   const url = `${base}/api/zalo/webhook`;
@@ -789,5 +859,14 @@ app.get(['/manifest.webmanifest', '/app/manifest.webmanifest'], (req, res) => {
 
 // File tĩnh: CSS, JS, font, ảnh (trên Vercel thư mục public/ được phục vụ trực tiếp, đây là dự phòng khi chạy trên máy).
 app.use(express.static(path.join(root, 'public')));
+
+// Lỗi chưa bắt (JSON hỏng, gửi quá lớn…): trả JSON ngắn gọn, không lộ chi tiết bên trong máy chủ.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) console.warn('[app]', req.method, req.path, err.message);
+  const message = status === 413 ? 'Dữ liệu gửi lên quá lớn' : status === 400 ? 'Dữ liệu gửi lên không hợp lệ' : 'Lỗi máy chủ';
+  res.status(status).json({ error: message });
+});
 
 export default app;

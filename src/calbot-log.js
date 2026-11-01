@@ -67,8 +67,10 @@ export async function readLog({ from, to, member } = {}) {
 }
 
 const OPS = { create: 'thêm', update: 'sửa', delete: 'xoá' };
+// Chữ bắt đầu bằng = + - @ (tên nhóm, tiêu đề do người trong nhóm Zalo gõ) bị Excel hiểu là công thức: thêm ' phía trước.
 const cell = (v) => {
-  const s = String(v ?? '');
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
