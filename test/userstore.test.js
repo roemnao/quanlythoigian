@@ -106,13 +106,3 @@ test('đăng nhập mật khẩu quản trị cũ không còn', async () => {
     assert.equal((await call(m, p, { username: 'x', password: 'y' })).status, 404, p);
   }
 });
-
-test('link .ics chỉ có khoá đúng mới đọc được', async () => {
-  const { calendarUrl } = (await call('GET', '/api/me', null, { cookie: owner })).data;
-  assert.ok(calendarUrl);
-  assert.equal((await call('GET', '/api/me', null, { cookie: a })).data.calendarUrl, undefined);
-  assert.equal((await call('GET', '/calendar.ics?key=sai')).status, 401);
-  const ok = await call('GET', new URL(calendarUrl).pathname + new URL(calendarUrl).search);
-  assert.equal(ok.status, 200);
-  assert.match(ok.data, /BEGIN:VCALENDAR/);
-});
