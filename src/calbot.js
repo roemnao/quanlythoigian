@@ -5,6 +5,7 @@ import { newId } from './db.js';
 import { dayKey, TZ } from './time.js';
 import { getMember, membersByZalo, pushCommands } from './members.js';
 import { fetchedFor, LOG_KEEP_DAYS, writeLog } from './calbot-log.js';
+import { kickDrain } from './gsync.js';
 
 const DAY = 24 * 3600;
 const MAX_ASSIGNEES = 50;
@@ -81,6 +82,7 @@ async function deliver(eventId, rec, pairs, op, unlinked) {
     unlinked: [...unlinked, ...gone].map(({ zaloUid, name }) => ({ zaloUid, name })),
   };
   await writeLog(entry);
+  for (const [a] of ok) kickDrain(a.userId); // ghi vào Google Lịch của người nhận ngay, không cần họ mở web
   const goneIds = new Set(gone.map((a) => a.userId));
   rec.assignees = rec.assignees.map((a) => (goneIds.has(a.userId) ? { ...a, userId: null } : a));
   return { logId, entry };

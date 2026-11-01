@@ -4,6 +4,8 @@
 import crypto from 'node:crypto';
 import { batch, kv } from './kv.js';
 import { newId } from './db.js';
+import { ROLES, can, isOwnerEmail, permsOf, roleOf } from './roles.js';
+import { revokeAndDelete } from './gtoken.js';
 
 // Đổi số này khi sửa Điều khoản / Chính sách: mọi người phải đồng ý lại trước khi nhận lệnh mới.
 export const TERMS_VERSION = '2026-10-24';
@@ -28,6 +30,8 @@ const K = {
   seen: 'seen',
   secret: 'member-secret',
   settings: 'member-settings',
+  audit: 'audit',
+  udata: (id) => `udata:${id}`,
 };
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -97,6 +101,8 @@ export function publicMember(u) {
     id: u.id, email: u.email, name: u.name, picture: u.picture || null,
     zalo: u.zalo ? { name: u.zalo.name || null, linkedAt: u.zalo.linkedAt } : null,
     termsVersion: u.termsVersion, needsTerms: u.termsVersion !== TERMS_VERSION, createdAt: u.createdAt,
+    role: roleOf(u), perms: permsOf(u),
+    google: { status: u.gstatus || 'off', email: u.gemail || null, lastSync: u.glastSync || null, lastError: u.glastError || null },
   };
 }
 
@@ -110,15 +116,17 @@ export async function signInMember({ sub, email, name, picture }, { acceptedTerm
   const now = nowIso();
   if (existing) {
     const u = { ...existing, email, name: name || existing.name, picture: picture || existing.picture || null };
+    if (isOwnerEmail(email) && u.role !== 'owner') Object.assign(u, { role: 'owner', roleChangedAt: now, roleChangedBy: 'OWNER_EMAILS' });
     if (acceptedTerms === TERMS_VERSION && u.termsVersion !== TERMS_VERSION) Object.assign(u, { termsVersion: TERMS_VERSION, termsAcceptedAt: now });
     await kv.set(K.user(u.id), u);
     return { user: u, created: false };
   }
   if (acceptedTerms !== TERMS_VERSION) return { needsTerms: true };
   const settings = await memberSettings();
-  if (!emailAllowed(email, settings.allowedEmails)) throw fail(403, `Tài khoản ${email} chưa được chủ hệ thống cho phép tham gia`);
+  if (!isOwnerEmail(email) && !emailAllowed(email, settings.allowedEmails)) throw fail(403, `Tài khoản ${email} chưa được chủ hệ thống cho phép tham gia`);
   const user = {
     id: newId(), sub, email, name: name || email.split('@')[0], picture: picture || null, zalo: null,
+    role: isOwnerEmail(email) ? 'owner' : 'user', gstatus: 'off',
     termsVersion: TERMS_VERSION, termsAcceptedAt: now, createdAt: now,
   };
   await batch().set(K.user(user.id), user).set(K.seq(user.id), 0).exec();
@@ -144,7 +152,8 @@ export async function deleteMember(id) {
   const u = await kv.get(K.user(id));
   if (!u) return false;
   const [subOwner, zaloOwner] = await batch().hget(K.bySub, u.sub).hget(K.byZalo, u.zalo?.uid || '-').exec();
-  const b = batch().del(K.user(id), K.seq(id), K.cmds(id), K.codeOf(id)).hdel(K.seen, id);
+  await revokeAndDelete(id).catch(() => {});
+  const b = batch().del(K.user(id), K.seq(id), K.cmds(id), K.codeOf(id), K.udata(id), `gapplied:${id}`, `ghist:${id}`).hdel(K.seen, id);
   if (subOwner === id) b.hdel(K.bySub, u.sub);
   if (u.zalo && zaloOwner === id) b.hdel(K.byZalo, u.zalo.uid);
   await b.exec();
@@ -161,6 +170,7 @@ export async function listMembers() {
     zalo: u.zalo ? { uid: u.zalo.uid, name: u.zalo.name || null, linkedAt: u.zalo.linkedAt } : null,
     termsVersion: u.termsVersion, needsTerms: u.termsVersion !== TERMS_VERSION,
     createdAt: u.createdAt, lastSeenAt: seen[u.id] || null, commands: Number(seqs[i]) || 0,
+    role: roleOf(u), hasSources: Boolean(u.hasSources), google: { status: u.gstatus || 'off', email: u.gemail || null, lastSync: u.glastSync || null, lastError: u.glastError || null },
   }).filter(Boolean).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
@@ -254,4 +264,44 @@ export async function commandsAfter(id, after = 0) {
   const cutoff = Date.now() - COMMAND_KEEP_DAYS * DAY * 1000;
   const commands = (await kv.lrange(K.cmds(id), 0, -1)).filter((c) => c.seq > from && Date.parse(c.at) >= cutoff);
   return { latest, commands, missed: (commands[0]?.seq ?? latest + 1) > from + 1 };
+}
+
+// ----- Phân quyền -----
+// Chỉ Owner đổi được quyền. Phải còn ít nhất một Owner. Mọi thay đổi ghi vào nhật ký (500 dòng, 180 ngày).
+export async function setRole(actor, targetId, role) {
+  if (!can(actor, 'accounts:write')) throw fail(403, 'Chỉ Owner mới đổi được quyền');
+  if (!ROLES.includes(role)) throw fail(400, 'Quyền phải là owner, technician hoặc user');
+  const target = await kv.get(K.user(targetId));
+  if (!target) throw fail(404, 'Không tìm thấy thành viên');
+  const from = roleOf(target);
+  if (from === role) return target;
+  if (from === 'owner') {
+    const owners = (await listMembers()).filter((m) => m.role === 'owner');
+    if (owners.length <= 1) throw fail(409, 'Phải còn ít nhất một Owner');
+  }
+  const at = nowIso();
+  Object.assign(target, { role, roleChangedAt: at, roleChangedBy: actor.email });
+  await batch().set(K.user(targetId), target)
+    .rpush(K.audit, { at, actor: actor.email, target: target.email, from, to: role }).ltrim(K.audit, -500, -1)
+    .expire(K.audit, 180 * DAY).exec();
+  return target;
+}
+
+export async function readAudit() {
+  return (await kv.lrange(K.audit, 0, -1)).reverse();
+}
+
+// Cập nhật nhãn Google Lịch trên hồ sơ (để trang Tài khoản người dùng hiện không phải mở dữ liệu từng người).
+export async function setGoogleStatus(id, patch) {
+  const u = await kv.get(K.user(id));
+  if (!u) return null;
+  const map = { status: 'gstatus', email: 'gemail', lastSync: 'glastSync', lastError: 'glastError', hasSources: 'hasSources' };
+  for (const [k, v] of Object.entries(patch)) if (map[k]) u[map[k]] = v;
+  await kv.set(K.user(id), u);
+  return u;
+}
+
+// Khoá link .ics (Owner dùng để đưa lịch của mình lên điện thoại): suy ra từ bí mật ký phiên, không lưu thêm.
+export async function calendarKey() {
+  return crypto.createHmac('sha256', await secret()).update('calendar-v2').digest('hex').slice(0, 32);
 }

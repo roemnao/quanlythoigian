@@ -3,15 +3,19 @@
 import { cfg } from './config.js';
 import { dayKey, TZ, zonedMidnight } from './time.js';
 
-const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
-const CAL = 'https://www.googleapis.com/calendar/v3';
+// Các địa chỉ Google có thể đổi bằng biến môi trường (chỉ dùng khi kiểm thử với Google giả).
+const AUTH_URL = process.env.GOOGLE_AUTH_URL || 'https://accounts.google.com/o/oauth2/v2/auth';
+const TOKEN_URL = process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token';
+const REVOKE_URL = process.env.GOOGLE_REVOKE_URL || 'https://oauth2.googleapis.com/revoke';
+const CAL = process.env.GOOGLE_CAL_URL || 'https://www.googleapis.com/calendar/v3';
 const DAY = 24 * 3600 * 1000;
 const PAST_DAYS = 7;
 const FUTURE_DAYS = 90;
 
 const LOGIN_SCOPES = ['openid', 'email', 'profile'];
+export const CALENDAR_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+// Thành viên: đăng nhập và xin luôn quyền Google Lịch trong cùng một màn hình Google.
+const MEMBER_SCOPES = [...LOGIN_SCOPES, CALENDAR_EVENTS_SCOPE];
 const CALENDAR_SCOPES = [
   'openid', 'email',
   'https://www.googleapis.com/auth/calendar.events',
@@ -22,16 +26,23 @@ export function googleConfigured() {
   return Boolean(cfg('GOOGLE_CLIENT_ID') && cfg('GOOGLE_CLIENT_SECRET'));
 }
 
+// purpose: login | setup | link | calendar (quản trị cũ) | member (đăng nhập + Google Lịch) | member-consent (xin lại, ép hiện màn hình đồng ý
+// để Google trả refresh token) | calendar-member (người đã đăng nhập bổ sung quyền Google Lịch).
 export function authUrl({ redirectUri, state, purpose, loginHint }) {
   const calendar = purpose === 'calendar';
+  const member = purpose === 'member' || purpose === 'member-consent';
+  const addCal = purpose === 'calendar-member';
+  const scope = member ? MEMBER_SCOPES : addCal ? ['openid', 'email', CALENDAR_EVENTS_SCOPE] : calendar ? CALENDAR_SCOPES : LOGIN_SCOPES;
   const params = new URLSearchParams({
     client_id: cfg('GOOGLE_CLIENT_ID'),
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: (calendar ? CALENDAR_SCOPES : LOGIN_SCOPES).join(' '),
+    scope: scope.join(' '),
     state,
-    // Lịch cần refresh token (offline) để đồng bộ khi bạn không mở web.
-    ...(calendar ? { access_type: 'offline', prompt: 'consent' } : { prompt: 'select_account' }),
+    // Lịch cần refresh token (offline) để máy chủ ghi lịch khi người dùng không mở web.
+    ...(calendar || addCal || purpose === 'member-consent' ? { access_type: 'offline', prompt: 'consent' }
+      : member ? { access_type: 'offline', prompt: 'select_account' } : { prompt: 'select_account' }),
+    ...(member || addCal ? { include_granted_scopes: 'true' } : {}),
   });
   if (loginHint) params.set('login_hint', loginHint);
   return `${AUTH_URL}?${params}`;
@@ -44,7 +55,7 @@ async function tokenRequest(params) {
     body: new URLSearchParams({ client_id: cfg('GOOGLE_CLIENT_ID'), client_secret: cfg('GOOGLE_CLIENT_SECRET'), ...params }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Google: ${data.error_description || data.error || res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`Google: ${data.error_description || data.error || res.status}`), { reconnect: data.error === 'invalid_grant' });
   return data;
 }
 
@@ -62,7 +73,10 @@ export function decodeIdToken(idToken) {
 
 export async function exchangeCode(code, redirectUri) {
   const data = await tokenRequest({ code, redirect_uri: redirectUri, grant_type: 'authorization_code' });
-  return { refreshToken: data.refresh_token || null, accessToken: data.access_token, claims: decodeIdToken(data.id_token) };
+  return {
+    refreshToken: data.refresh_token || null, accessToken: data.access_token, claims: decodeIdToken(data.id_token),
+    scopes: String(data.scope || '').split(/\s+/).filter(Boolean),
+  };
 }
 
 export async function revoke(token) {
@@ -115,6 +129,7 @@ export function fromGoogle(g, calendarName) {
     note: [g.location, g.description].filter(Boolean).join('\n').slice(0, 1000),
     link: g.htmlLink || null,
     calendar: calendarName || null,
+    assigned: Boolean(g.extendedProperties?.private?.ifmwhId), // lịch do bot giao trong nhóm Zalo
   };
 }
 
@@ -163,16 +178,19 @@ export async function pullGoogle(openStore, { olderThanMs = 0 } = {}) {
   if (olderThanMs && g.lastSync && Date.now() - new Date(g.lastSync).getTime() < olderThanMs) return null;
   let events = null;
   let error = null;
+  let reconnect = false;
   try {
     const calendars = g.calendars?.length ? g.calendars : [{ id: 'primary', name: 'Lịch chính' }];
     events = await fetchEvents(g.refreshToken, calendars);
   } catch (err) {
     error = err.message;
+    reconnect = Boolean(err.reconnect);
   }
   const store = await openStore();
   if (!store.data.google) return null; // vừa ngắt kết nối
   store.data.google.lastSync = new Date().toISOString();
   store.data.google.lastError = error;
+  if (reconnect) store.data.google.status = 'reconnect'; // người dùng đã gỡ quyền ở myaccount.google.com
   if (events) store.replaceSourceEvents('google', events, 'google');
   await store.save();
   return error ? { ok: false, error } : { ok: true, events: events.length };
@@ -196,6 +214,7 @@ async function pushOnce(openStore) {
   const { refreshToken, pendingDeletes = [] } = snap.data.google;
   const since = Date.now() - DAY;
   const created = {}; const updated = {}; const lost = []; const deleted = []; const errors = [];
+  let reconnect = false;
 
   for (const e of snap.data.events.filter(localEvent)) {
     if (e.googleId && !e.googleDirty) continue;
@@ -210,7 +229,7 @@ async function pushOnce(openStore) {
     } catch (err) {
       if (err.status === 409 && !e.googleId) created[e.id] = googleEventId(e); // đã có sẵn trên Google
       else if (err.status === 404 || err.status === 410) lost.push(e.id); // bị xoá bên Google → tạo lại lần sau
-      else errors.push(err.message);
+      else { errors.push(err.message); if (err.reconnect) reconnect = true; }
     }
   }
   for (const gid of pendingDeletes) {
@@ -227,6 +246,7 @@ async function pushOnce(openStore) {
   }
   store.data.google.pendingDeletes = (store.data.google.pendingDeletes || []).filter((gid) => !deleted.includes(gid));
   if (errors.length) store.data.google.lastError = errors[0];
+  if (reconnect) store.data.google.status = 'reconnect';
   await store.save();
   return { created: Object.keys(created).length, updated: Object.keys(updated).length, deleted: deleted.length, errors };
 }

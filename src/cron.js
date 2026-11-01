@@ -1,8 +1,9 @@
 // Việc chạy định kỳ: đồng bộ nguồn, nhắc sự kiện sắp tới, tóm tắt buổi sáng qua Zalo.
 // Trên Vercel được gọi qua /api/cron (Vercel Cron hoặc cron-job.org); trên máy thì chạy bằng setInterval.
 import { Store } from './db.js';
-import { syncSources } from './sources.js';
-import { syncGoogle } from './google.js';
+import { openOwnerStore } from './userstore.js';
+import { cronMembers } from './gsync.js';
+import { listMembers } from './members.js';
 import { dayAgenda, ownerChatId, sendMessage, zaloConfigured } from './zalo.js';
 import { dayKey, fmtTime, hourOf } from './time.js';
 
@@ -39,19 +40,19 @@ function settings() {
 }
 
 export async function runCron({ now = new Date(), forceSync = false } = {}) {
+  await Store.open(); // nạp khoá API nhập trên web (Gemini, Zalo, Google)
   const { syncEvery, before, summaryHour } = settings();
-  const report = { synced: 0, reminders: 0, summary: false };
+  const report = { synced: 0, reminders: 0, summary: false, syncErrors: [] };
 
-  const results = await syncSources(Store.open, { olderThanMs: forceSync ? 0 : syncEvery - MIN });
-  report.synced = Object.keys(results).length;
-  report.syncErrors = Object.values(results).filter((r) => !r.ok).map((r) => r.error);
+  // Mỗi người dùng một dữ liệu riêng: chạy lại lệnh Google bị lỗi, đồng bộ nguồn và Google Lịch theo lô.
   try {
-    report.google = await syncGoogle(Store.open, { olderThanMs: forceSync ? 0 : syncEvery - MIN });
+    report.members = await cronMembers({ listMembers, forceSync, syncEveryMs: syncEvery });
+    report.synced = (report.members.sources || 0) + (report.members.google || 0);
   } catch (err) {
-    report.syncErrors.push(`Google: ${err.message}`);
+    report.syncErrors.push(err.message);
   }
 
-  const store = await Store.open();
+  const store = await openOwnerStore();
   const chatId = ownerChatId(store);
   if (!zaloConfigured() || !chatId) return report;
 

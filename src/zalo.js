@@ -1,7 +1,7 @@
 // Zalo Bot: nhận tin nhắn (webhook hoặc polling), trả lời lệnh, gửi nhắc việc.
 // Tài liệu: https://bot.zapps.me/docs — API dạng https://bot-api.zapps.me/bot<TOKEN>/<method>
 import crypto from 'node:crypto';
-import { Store } from './db.js';
+import { openOwnerStore, openUser } from './userstore.js';
 import { extractItems, geminiConfigured } from './gemini.js';
 import { dayKey, fmtDateTime, fmtTime } from './time.js';
 import { cfg } from './config.js';
@@ -171,14 +171,14 @@ export async function handleUpdate(update) {
     // Gọi Gemini trước (chậm), sau đó mới mở dữ liệu mới nhất để ghi — tránh đè thay đổi trên web.
     let items;
     if (text && !text.startsWith('/') && geminiConfigured()) {
-      const owner = ownerChatId(await Store.open());
+      const owner = ownerChatId(await openOwnerStore());
       if (owner && String(owner) === String(chatId)) items = await extractItems(text);
     }
-    const store = await Store.open();
+    const store = await openOwnerStore(); // lịch, việc, mã ghép nối của bot Zalo nhắc việc nằm ở dữ liệu của Owner chính
     reply = await handleText(store, chatId, text, { name: msg.from?.display_name, items });
     await store.save();
     // Lịch vừa duyệt qua Zalo → đưa lên Google Lịch luôn (nếu đã kết nối).
-    if (/^\/duyet/i.test(text)) await pushGoogle(Store.open).catch((err) => console.warn('[google]', err.message));
+    if (/^\/duyet/i.test(text) && store.id) await pushGoogle(openUser(store.id)).catch((err) => console.warn('[google]', err.message));
   } catch (err) {
     reply = `⚠️ Lỗi: ${err.message}`;
   }
