@@ -1,6 +1,6 @@
 // Service worker của web app: giao diện mở được cả khi mạng chập chờn. Không bao giờ lưu dữ liệu /api.
 // Đăng ký với scope "/" (web app ở tên miền riêng) hoặc "/app/" (dùng chung tên miền với trang quản trị).
-const CACHE = 'ifmwh-app-v3'; // đổi số này mỗi khi giao diện đổi, để máy đã cài app bỏ bản cũ
+const CACHE = 'ifmwh-app-v4'; // đổi số này mỗi khi giao diện đổi, để máy đã cài app bỏ bản cũ
 const BASE = new URL(self.registration.scope).pathname;
 const SHELL = [BASE, '/manifest.webmanifest', '/app/main.js', '/app/ui.js', '/app/account.js', '/app/admin-bot.js', '/app/admin-accounts.js', '/app/app.css', '/theme.css', '/theme.js', '/icon.svg'];
 
@@ -22,15 +22,12 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(e.request).catch(() => caches.match(BASE)));
     return;
   }
-  // CSS, JS, font, ảnh: dùng bản đã lưu cho nhanh, đồng thời tải bản mới cho lần sau.
-  e.respondWith(caches.match(e.request).then((hit) => {
-    const fresh = fetch(e.request).then((res) => {
-      if (res.ok) {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copy));
-      }
-      return res;
-    }).catch(() => hit);
-    return hit || fresh;
-  }));
+  // CSS, JS, font, ảnh: ưu tiên bản mới từ mạng (để không bao giờ lệch giữa trang mới và CSS cũ), mất mạng thì dùng bản đã lưu.
+  e.respondWith(fetch(e.request).then((res) => {
+    if (res.ok) {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(e.request, copy));
+    }
+    return res;
+  }).catch(() => caches.match(e.request)));
 });

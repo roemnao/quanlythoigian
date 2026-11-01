@@ -794,12 +794,12 @@ Chuẩn bị 3 Gmail: **O** (Owner, trong `OWNER_EMAILS`), **T** (sẽ thành Te
 
 - [ ] W0: sao lưu, Preview tách `KV_PREFIX`/`STORAGE_KEY`, Google app *In production*, `TOKEN_ENC_KEY`, `OWNER_EMAILS`, cron-job.org 5 phút
 - [ ] Cấu hình từ web đã chép vào `settings.env` (Windows + VPS)
-- [ ] P1 PyloS tách khỏi web + test `test_no_web_coupling.py`
-- [ ] P2 PyloS đăng nhập Google riêng (Windows + VPS) + `test_google_login.py`
-- [ ] P3 PyloS giao diện vàng–đen + build lại exe
-- [ ] W1 web: Gmail duy nhất, phân quyền, một tên miền + `roles.test.js`, `primary-host.test.js`
-- [ ] W2 web: dữ liệu riêng từng người + di trú + `schedule_web.py` gửi `zaloUid`
-- [ ] W3 web: Google Lịch phía máy chủ + điều khoản mới + `gtoken`/`drain`/`google-member` tests
-- [ ] W4 web: giao diện gộp, mục Tài khoản, Quản trị theo quyền + e2e 3 vai trò + đổi cache service worker
+- [x] P1 PyloS tách khỏi web + test `test_no_web_coupling.py`
+- [x] P2 PyloS đăng nhập Google riêng (Windows + VPS) + `test_google_login.py`
+- [x] P3 PyloS giao diện vàng–đen + build lại exe
+- [x] W1 web: Gmail duy nhất, phân quyền, một tên miền + `roles.test.js`, `primary-host.test.js`
+- [x] W2 web: dữ liệu riêng từng người + di trú + `schedule_web.py` gửi `zaloUid`
+- [x] W3 web: Google Lịch phía máy chủ + điều khoản mới + `gtoken`/`drain`/`google-member` tests
+- [x] W4 web: giao diện gộp, mục Tài khoản, Quản trị theo quyền + e2e 3 vai trò + đổi cache service worker
 - [ ] Mục 6 kiểm thử toàn hệ thống: 15/15 dòng đúng
 - [ ] W5 (sau ≥ 7 ngày): bỏ API cũ, dọn Upstash, cập nhật README hai repo
