@@ -51,16 +51,33 @@ async function secret() {
   }
   return secretCache;
 }
-const sign = (key, id) => crypto.createHmac('sha256', key).update(`member-v1|${id}`).digest('base64url');
+// Cookie: "<id>.<sig>" (phiên đời 0) hoặc "<id>.<đời>.<sig>". Đời phiên (u.sessionGen) tăng khi đăng xuất,
+// nên mọi cookie cũ, kể cả cookie bị lấy cắp, hết hiệu lực ngay.
+const sign = (key, id, gen) => crypto.createHmac('sha256', key).update(gen ? `member-v2|${id}|${gen}` : `member-v1|${id}`).digest('base64url');
 
 export async function memberCookieValue(id) {
-  return `${id}.${sign(await secret(), id)}`;
+  const gen = Number((await kv.get(K.user(id)))?.sessionGen) || 0;
+  const key = await secret();
+  return gen ? `${id}.${gen}.${sign(key, id, gen)}` : `${id}.${sign(key, id, 0)}`;
 }
 
 export async function verifyMemberCookie(value) {
-  const [id, sig] = String(value || '').split('.');
-  if (!/^[0-9a-f]{12}$/.test(id || '') || !sig) return null;
-  return safeEqual(sig, sign(await secret(), id)) ? id : null;
+  const parts = String(value || '').split('.');
+  const [id] = parts;
+  const gen = parts.length === 3 ? Number(parts[1]) : 0;
+  const sig = parts[parts.length - 1];
+  if (!/^[0-9a-f]{12}$/.test(id || '') || !sig || parts.length > 3 || !Number.isInteger(gen) || gen < 0) return null;
+  if (!safeEqual(sig, sign(await secret(), id, gen))) return null;
+  const u = await kv.get(K.user(id));
+  return u && (Number(u.sessionGen) || 0) === gen ? id : null;
+}
+
+// Huỷ mọi phiên đăng nhập của một người (đăng xuất mọi thiết bị).
+export async function revokeSessions(id) {
+  const u = await kv.get(K.user(id));
+  if (!u) return;
+  u.sessionGen = (Number(u.sessionGen) || 0) + 1;
+  await kv.set(K.user(id), u);
 }
 
 // ----- Cài đặt cho thành viên (chủ web chỉnh ở trang quản trị) -----

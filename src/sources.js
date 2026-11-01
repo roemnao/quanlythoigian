@@ -1,17 +1,51 @@
 // Đồng bộ các nguồn: lịch ICS (Google Calendar, Outlook, TKB...) và trang web (đọc bằng Gemini).
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import ical from 'node-ical';
 import { extractItems, geminiConfigured } from './gemini.js';
+import { isPrivateHost } from './limits.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 // Chỉ lấy sự kiện trong khoảng này để lịch không phình to.
 const PAST_DAYS = 7;
 const FUTURE_DAYS = 90;
 
-async function fetchText(url, fetchImpl) {
-  const res = await fetchImpl(url, { headers: { 'User-Agent': 'quanlythoigian/0.1' }, redirect: 'follow' });
-  if (!res.ok) throw new Error(`Tải ${url} lỗi HTTP ${res.status}`);
-  return res.text();
+const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_REDIRECTS = 5;
+
+// Tên miền phải trỏ tới địa chỉ công khai (chặn tên miền trỏ về 127.0.0.1, mạng nội bộ, metadata của máy chủ đám mây).
+async function assertPublic(url, lookup) {
+  const u = new URL(url);
+  if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Chỉ hỗ trợ http/https');
+  if (isPrivateHost(u.hostname)) throw new Error('Không dùng được địa chỉ nội bộ');
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  const addrs = net.isIP(host) ? [host] : (await lookup(host, { all: true })).map((a) => a.address);
+  if (!addrs.length || addrs.some((a) => isPrivateHost(a))) throw new Error('Không dùng được địa chỉ nội bộ');
+}
+
+// Tải nguồn: tự đi theo chuyển hướng nhưng kiểm lại từng đích, giới hạn dung lượng.
+async function fetchText(url, fetchImpl, lookup) {
+  let current = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (lookup) await assertPublic(current, lookup);
+    const res = await fetchImpl(current, { headers: { 'User-Agent': 'quanlythoigian/0.1' }, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+    if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+      current = new URL(res.headers.get('location'), current).href;
+      continue;
+    }
+    if (!res.ok) throw new Error(`Tải ${url} lỗi HTTP ${res.status}`);
+    if (Number(res.headers.get('content-length')) > MAX_BYTES) throw new Error('Nguồn lớn quá 5 MB');
+    if (!res.body) return res.text();
+    const chunks = []; let size = 0;
+    for await (const chunk of res.body) {
+      size += chunk.length;
+      if (size > MAX_BYTES) throw new Error('Nguồn lớn quá 5 MB');
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
+  }
+  throw new Error('Chuyển hướng quá nhiều lần');
 }
 
 // Trả về danh sách sự kiện { title, start, end, allDay, note } trong khoảng thời gian quan tâm.
@@ -68,9 +102,10 @@ export function htmlToText(html) {
 }
 
 // Bước 1 (chậm, không đụng dữ liệu): tải nguồn, đọc ICS hoặc nhờ Gemini đọc trang web.
-export async function fetchSource(source, { fetchImpl = fetch } = {}) {
+// Gọi thật (không truyền fetchImpl): kiểm DNS từng bước. Kiểm thử truyền fetchImpl giả, có thể truyền lookup giả.
+export async function fetchSource(source, { fetchImpl, lookup } = {}) {
   try {
-    const text = await fetchText(source.url, fetchImpl);
+    const text = await fetchText(source.url, fetchImpl || fetch, lookup || (fetchImpl ? null : dns.lookup));
     if (source.type === 'ics') return { ok: true, events: parseIcsEvents(text) };
     const content = htmlToText(text);
     const hash = crypto.createHash('sha1').update(content).digest('hex');
