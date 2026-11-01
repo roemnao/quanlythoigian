@@ -15,13 +15,13 @@
      Sửa nội dung thì đổi cả số phiên bản ở đây và TERMS_VERSION trong src/members.js để mọi người được hỏi đồng ý lại. -->
 <div class="page">
   <header class="page-head">
-    <a class="brand" href="/app/"><svg class="temple i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9.5 12 4l9 5.5z"/><path d="M4 9.5h16M5.8 11.5v6.2M9.4 11.5v6.2M14.6 11.5v6.2M18.2 11.5v6.2M3.5 18.5h17M2 21h20"/></svg><span class="wordmark">iforgotmywayhome</span></a>
+    <a class="brand" href="/"><svg class="temple i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9.5 12 4l9 5.5z"/><path d="M4 9.5h16M5.8 11.5v6.2M9.4 11.5v6.2M14.6 11.5v6.2M18.2 11.5v6.2M3.5 18.5h17M2 21h20"/></svg><span class="wordmark">iforgotmywayhome</span></a>
     <button type="button" class="btn ghost sm theme-toggle" data-theme-toggle><svg class="i i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><svg class="i i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><span data-theme-label>Nền tối</span></button>
   </header>
   <div class="meander" aria-hidden="true"></div>
   <main class="card prose">
     <h1>Điều khoản dịch vụ</h1>
-    <p class="muted small">Phiên bản <b data-terms-version>2026-10-24</b> · áp dụng từ 24/10/2026</p>
+    <p class="muted small">Phiên bản <b data-terms-version>2026-11-01</b> · áp dụng từ 01/11/2026</p>
 
     <h2>1. iforgotmywayhome là gì</h2>
     <p>iforgotmywayhome giúp một nhóm chat Zalo giao lịch cho nhau. Khi ai đó trong nhóm nhờ bot "giao lịch họp 9h mai cho @An, @Bình", trợ lý AI của nhóm ghi nhận yêu cầu, hệ thống tạo lệnh lịch cho từng người được nhắc tới, và web app của mỗi người tự ghi lịch đó vào Google Lịch của chính họ.</p>
@@ -30,16 +30,17 @@
     <h2>2. Tài khoản</h2>
     <ul>
       <li>Tài khoản chính là <b>tài khoản Gmail</b> của bạn. Bạn đăng nhập bằng Google; hệ thống không có và không hỏi mật khẩu của bạn.</li>
-      <li>Tài khoản Zalo chỉ là <b>liên kết phụ</b> để bot biết bạn là ai trong nhóm. Bạn liên kết bằng cách gửi mã 6 số (lấy trong app) cho bot. Chỉ liên kết tài khoản Zalo của chính bạn.</li>
+      <li>Tài khoản Zalo chỉ là <b>liên kết phụ</b> để bot biết bạn là ai trong nhóm. Bạn liên kết bằng cách gửi mã 6 số (lấy trong mục Tài khoản) cho bot. Chỉ liên kết tài khoản Zalo của chính bạn.</li>
       <li>Bạn có thể gỡ liên kết Zalo, đăng xuất hoặc xoá tài khoản bất cứ lúc nào trong app.</li>
       <li>Chủ hệ thống có thể giới hạn ai được tạo tài khoản và có thể xoá tài khoản dùng sai mục đích.</li>
     </ul>
 
-    <h2>3. Hoạt động một chiều</h2>
+    <h2>3. Cách lịch được ghi vào Google Lịch</h2>
     <ul>
-      <li>Máy chủ chỉ nhận lệnh giao lịch từ trợ lý AI của nhóm. Web app của bạn chỉ <b>nhận</b> lệnh dành cho bạn (thêm, sửa, xoá lịch) rồi ghi vào Google Lịch ngay trong trình duyệt.</li>
-      <li>Web app không gửi lịch hay dữ liệu Google Lịch của bạn lên máy chủ, và không xem được dữ liệu của người khác.</li>
-      <li>Lịch chỉ được cập nhật khi app đang mở (trên máy tính hoặc điện thoại). Lệnh chưa lấy được giữ tối đa 30 ngày.</li>
+      <li>Máy chủ chỉ nhận lệnh giao lịch từ trợ lý AI của nhóm. Khi bạn đã cho phép Google Lịch lúc đăng nhập, <b>máy chủ tự thêm, sửa, xoá</b> các lịch được giao cho bạn vào Google Lịch của bạn, không cần bạn mở web.</li>
+      <li>Máy chủ giữ quyền Google Lịch của bạn dưới dạng mã hoá; bạn ngắt được bất cứ lúc nào ở mục Tài khoản hoặc tại myaccount.google.com/permissions. Khi quyền bị gỡ, lịch mới sẽ chưa được ghi cho tới khi bạn kết nối lại (lệnh chưa ghi được giữ tối đa 30 ngày).</li>
+      <li>Web còn cho bạn quản lý lịch, việc cần làm, đề xuất và nguồn lịch của riêng bạn. Mỗi người chỉ thấy dữ liệu của chính mình.</li>
+      <li>Có ba vai trò: Owner, Technician và User. Owner và Technician quản lý bot lịch và xem danh sách tài khoản (không xem lịch hay dữ liệu Google của bạn); chỉ Owner đổi quyền.</li>
       <li>Bạn không chỉnh được model AI hay thông số của bot; những thứ này do chủ hệ thống quyết định.</li>
     </ul>
 
@@ -54,12 +55,12 @@
     <p>Cách hệ thống thu thập, lưu và xoá dữ liệu được nêu trong <a href="/privacy.html">Chính sách quyền riêng tư</a>, là một phần của điều khoản này.</p>
 
     <h2>6. Thay đổi điều khoản</h2>
-    <p>Khi điều khoản thay đổi, số phiên bản ở đầu trang sẽ đổi và app sẽ hỏi bạn đồng ý lại trước khi nhận lịch mới. Nếu không đồng ý, bạn có thể xoá tài khoản.</p>
+    <p>Khi điều khoản thay đổi, số phiên bản ở đầu trang sẽ đổi và web sẽ hỏi bạn đồng ý lại trước khi bạn dùng tiếp và trước khi lịch mới được ghi. Nếu không đồng ý, bạn có thể xoá tài khoản.</p>
 
     <h2>7. Liên hệ</h2>
     <p>Mọi thắc mắc, yêu cầu về tài khoản hay dữ liệu, hãy liên hệ chủ hệ thống (người quản lý bot trong nhóm Zalo của bạn).</p>
   </main>
-  <footer class="page-foot"><a href="/app/">Web app</a><a href="/terms.html">Điều khoản dịch vụ</a><a href="/privacy.html">Chính sách quyền riêng tư</a></footer>
+  <footer class="page-foot"><a href="/">Web</a><a href="/terms.html">Điều khoản dịch vụ</a><a href="/privacy.html">Chính sách quyền riêng tư</a></footer>
 </div>
 </body>
 </html>

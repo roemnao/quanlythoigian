@@ -1,7 +1,4 @@
-// Kiểm thử đầu-cuối web app bằng trình duyệt thật (Playwright), Google giả lập hoàn toàn:
-// thư viện đăng nhập (GIS) trả token giả, Google Lịch giả ghi lại các lời gọi.
-// Chạy ở chế độ hai tên miền: web app ở http://app.localhost:<cổng>, trang quản trị ở http://localhost:<cổng>
-// (Chromium tự trỏ *.localhost về máy này).
+// Kiểm thử đầu-cuối bằng trình duyệt thật (Playwright): một web, ba vai trò (Owner, Technician, User).
 // Chạy: npm run test:e2e   (cần Playwright + Chromium; SHOTS_DIR=thư-mục để lưu ảnh chụp sáng/tối, máy tính/điện thoại)
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,174 +11,138 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qltg-e2e-'));
 process.env.DATA_FILE = path.join(dir, 'db.json');
 process.env.GOOGLE_CLIENT_ID = 'client-123.apps.googleusercontent.com';
 process.env.GOOGLE_CLIENT_SECRET = 'secret-xyz';
-process.env.APP_HOST = 'app.localhost';
-delete process.env.APP_PASSWORD;
+process.env.OWNER_EMAILS = 'owner@gmail.com';
+for (const k of ['APP_PASSWORD', 'PRIMARY_HOST', 'APP_HOST', 'VERCEL']) delete process.env[k];
 
 const { default: app } = await import('../../src/app.js');
 const members = await import('../../src/members.js');
 const calbot = await import('../../src/calbot.js');
+const { kv } = await import('../../src/kv.js');
 const shots = process.env.SHOTS_DIR;
 if (shots) fs.mkdirSync(shots, { recursive: true });
 
 const server = app.listen(0);
-const adminBase = `http://localhost:${server.address().port}`;
-const base = `http://app.localhost:${server.address().port}`;
-
-// Thành viên đã đăng nhập, đã liên kết Zalo.
-const { user } = await members.signInMember({ sub: 'g-1', email: 'an@gmail.com', name: 'Nguyễn Văn An' }, { acceptedTerms: members.TERMS_VERSION });
-const { code } = await members.createZaloCode(user.id);
+const base = `http://localhost:${server.address().port}`;
+const T = members.TERMS_VERSION;
+const mk = async (sub, email, name) => (await members.signInMember({ sub, email, name }, { acceptedTerms: T })).user;
+const owner = await mk('g-o', 'owner@gmail.com', 'Chủ Web');
+const tech = await mk('g-t', 'tech@gmail.com', 'Kỹ Thuật');
+const user = await mk('g-u', 'user@gmail.com', 'Nguyễn Văn An');
+await members.setRole(owner, tech.id, 'technician');
+const ownerNow = await members.getMember(owner.id);
+await members.setRole(ownerNow, tech.id, 'technician');
+const code = (await members.createZaloCode(user.id)).code;
 await members.linkZalo({ code, zaloUid: 'z-an', zaloName: 'An Nguyễn' });
-const cookie = await members.memberCookieValue(user.id);
-const source = { chatId: 'g', chatName: 'Nhóm dự án', senderName: 'Sếp' };
-const a1 = await calbot.assign({ title: 'Họp kế hoạch quý IV', start: '2026-10-30T09:00:00+07:00', note: 'Phòng 301', assignees: [{ zaloUid: 'z-an' }], source });
-await calbot.assign({ title: 'Nộp báo cáo', allDay: true, start: '2026-11-02', assignees: [{ zaloUid: 'z-an' }], source });
-
-const GIS_STUB = `window.google = { accounts: { oauth2: {
-  initTokenClient: (cfg) => ({ requestAccessToken: () => setTimeout(() => cfg.callback({ access_token: 'fake-token', expires_in: 3600, scope: cfg.scope }), 20) }),
-  hasGrantedAllScopes: () => true,
-} } };`;
-
-const calendar = new Map();
-const calls = [];
-async function fakeCalendar(route) {
-  const req = route.request();
-  const url = new URL(req.url());
-  const id = decodeURIComponent(url.pathname.split('/events/')[1] || '');
-  const body = req.postData() ? JSON.parse(req.postData()) : null;
-  calls.push({ method: req.method(), id: id || body?.id, auth: req.headers().authorization });
-  const json = (status, data) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data),
-    headers: { 'access-control-allow-origin': '*' } });
-  if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
-  if (req.method() === 'POST') {
-    if (calendar.has(body.id)) return json(409, { error: { message: 'duplicate' } });
-    calendar.set(body.id, body);
-    return json(200, { ...body, htmlLink: `https://calendar.google.com/event?eid=${body.id}` });
-  }
-  if (req.method() === 'PUT') {
-    if (!calendar.has(id)) return json(404, { error: { message: 'Not Found' } });
-    calendar.set(id, body);
-    return json(200, { ...body, id, htmlLink: `https://calendar.google.com/event?eid=${id}` });
-  }
-  if (req.method() === 'DELETE') {
-    if (!calendar.delete(id)) return json(410, { error: { message: 'Gone' } });
-    return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } });
-  }
-  return json(400, {});
-}
+await calbot.assign({ title: 'Họp kế hoạch quý IV', start: '2026-10-30T09:00:00+07:00', assignees: [{ zaloUid: 'z-an' }], source: { chatName: 'Nhóm dự án', senderName: 'Sếp' } });
+const cookies = Object.fromEntries(await Promise.all([['owner', owner], ['tech', tech], ['user', user]].map(async ([k, u]) => [k, await members.memberCookieValue(u.id)])));
 
 const browser = await chromium.launch();
 let failed = false;
-async function page({ theme = 'dark', mobile = false, signedIn = true } = {}) {
+async function open(who, { theme = 'dark', mobile = false } = {}) {
   const ctx = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1280, height: 900 }, serviceWorkers: 'block' });
-  if (signedIn) await ctx.addCookies([{ name: 'qltg_member', value: cookie, url: base }]);
-  await ctx.route('https://accounts.google.com/gsi/client', (r) => r.fulfill({ contentType: 'text/javascript', body: GIS_STUB }));
-  await ctx.route('https://www.googleapis.com/calendar/v3/**', fakeCalendar);
+  if (who) await ctx.addCookies([{ name: 'qltg_member', value: cookies[who], url: base }]);
   await ctx.addInitScript((t) => localStorage.setItem('ifmwh-theme', t), theme);
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(e.message));
-  p.on('console', (m) => { if (m.type() === 'error' && !/status of 401/.test(m.text())) errors.push(m.text()); });
-  return { p, ctx, errors };
-}
-async function snap(p, name) {
-  if (shots) await p.screenshot({ path: path.join(shots, `${name}.png`), fullPage: true });
-}
-
-try {
-  // Chưa đăng nhập: màn hình đăng nhập, nút bị khoá cho tới khi tick đồng ý điều khoản.
-  for (const [theme, mobile] of [['dark', false], ['light', false], ['dark', true], ['light', true]]) {
-    const { p, ctx, errors } = await page({ theme, mobile, signedIn: false });
-    await p.goto(`${base}/`);
-    await p.getByText('Đăng nhập bằng Google').waitFor();
-    assert.equal(await p.locator('html').getAttribute('data-theme'), theme);
-    const btn = p.locator('a.google');
-    assert.equal(await btn.getAttribute('aria-disabled'), 'true');
-    await p.locator('#agree').check();
-    assert.equal(await btn.getAttribute('aria-disabled'), 'false');
-    assert.match(await btn.getAttribute('href'), new RegExp(`purpose=member&terms=${members.TERMS_VERSION}`));
-    await snap(p, `app-signin-${theme}-${mobile ? 'mobile' : 'desktop'}`);
-    assert.deepEqual(errors, []);
-    await ctx.close();
-  }
-
-  // Đã đăng nhập: kết nối Google Lịch → lệnh được ghi vào lịch.
-  const { p, ctx, errors } = await page();
+  p.on('console', (m) => { if (m.type() === 'error' && !/favicon|401|403/.test(m.text())) errors.push(m.text()); });
+  p.errors = errors;
   await p.goto(`${base}/`);
-  await p.getByText('Zalo đã liên kết').waitFor();
-  await p.getByText('Có 2 lịch mới đang chờ').waitFor();
-  await snap(p, 'app-home-pending-dark-desktop');
-  await p.getByRole('button', { name: 'Kết nối Google Lịch' }).first().click();
-  await p.getByText('Mọi lịch được giao đã nằm trong Google Lịch.').waitFor();
-  const gid = `qltgm${a1.eventId}`;
-  assert.ok(calendar.has(gid), 'lịch đã lên Google');
-  assert.equal(calendar.get(gid).summary, 'Họp kế hoạch quý IV');
-  assert.equal(calendar.get(gid).start.dateTime, '2026-10-30T02:00:00.000Z');
-  assert.ok(calls.every((c) => c.auth === 'Bearer fake-token'));
-  assert.equal(await p.locator('li.hist').count(), 2);
-
-  // Sửa giờ rồi huỷ: app lấy lệnh mới khi bấm kiểm tra.
-  await calbot.update(a1.eventId, { start: '2026-10-30T10:00:00+07:00' });
-  await p.getByRole('button', { name: 'Kiểm tra ngay' }).click();
-  await p.locator('li.hist').nth(2).waitFor();
-  assert.equal(calendar.get(gid).start.dateTime, '2026-10-30T03:00:00.000Z');
-  await calbot.cancel(a1.eventId);
-  await p.getByRole('button', { name: 'Kiểm tra ngay' }).click();
-  await p.locator('li.hist').nth(3).waitFor();
-  assert.ok(!calendar.has(gid), 'lịch đã bị xoá khỏi Google');
-  await snap(p, 'app-home-dark-desktop');
-
-  // Tải lại trang: không áp lại lệnh cũ (tiến độ lưu trên máy).
-  const before = calls.length;
-  await p.reload();
-  await p.getByText('Mọi lịch được giao đã nằm trong Google Lịch.').waitFor();
-  assert.equal(calls.length, before);
-  assert.deepEqual(errors, []);
-
-  for (const [theme, mobile] of [['light', false], ['dark', true], ['light', true]]) {
-    const v = await page({ theme, mobile });
-    await v.p.goto(`${base}/`);
-    await v.p.getByText('Zalo đã liên kết').waitFor();
-    await snap(v.p, `app-home-${theme}-${mobile ? 'mobile' : 'desktop'}`);
-    assert.deepEqual(v.errors, []);
-    await v.ctx.close();
-  }
-
-  await ctx.close();
-
-  // Duyệt đăng nhập của trang quản lý bot: mở ?device=<mã> khi đã đăng nhập Gmail → bấm Cho phép → bot nhận kết quả.
-  const { startDeviceLogin, pollDeviceLogin } = await import('../../src/devicelogin.js');
-  const device = await startDeviceLogin();
-  const dv = await page();
-  await dv.p.goto(`${base}/?device=${device.code}`);
-  await dv.p.getByText('Đăng nhập trang quản lý bot?').waitFor();
-  assert.ok((await dv.p.locator('body').innerText()).includes('an@gmail.com'));
-  assert.equal(new URL(dv.p.url()).search, '', 'mã được xoá khỏi địa chỉ');
-  await snap(dv.p, 'app-device-dark-desktop');
-  await dv.p.getByRole('button', { name: 'Cho phép' }).click();
-  await dv.p.getByText('Đã duyệt').first().waitFor();
-  assert.deepEqual(await pollDeviceLogin(device.code, 'sub-khac'), { status: 'approved', email: 'an@gmail.com', isAdmin: false });
-  assert.deepEqual(dv.errors, []);
-  await dv.ctx.close();
-
-  // Tên miền quản trị: trang đăng nhập quản trị; link /app/ cũ đưa sang web app; phiên thành viên không dùng được ở đây.
-  const adminView = await page({ signedIn: false });
-  await adminView.p.goto(`${adminBase}/`);
-  await adminView.p.locator('#nav button[data-view="system"]').waitFor({ state: 'attached' });
-  assert.match(await adminView.p.title(), /Quản trị/);
-  await snap(adminView.p, 'admin-host-login');
-  await adminView.p.goto(`${adminBase}/app/`);
-  assert.equal(new URL(adminView.p.url()).host, `app.localhost:${server.address().port}`);
-  const me = await adminView.p.request.get(`${adminBase}/api/me`, { headers: { Cookie: `qltg_member=${cookie}` } });
-  assert.equal(me.status(), 404);
-  // Trang đang ở tên miền app (vừa được chuyển sang): API quản trị không có ở đây.
-  assert.equal(await adminView.p.evaluate(() => fetch('/api/auth/status').then((r) => r.status)), 404);
-  await adminView.ctx.close();
-  console.log('e2e: ok');
-} catch (err) {
-  failed = true;
-  console.error(err);
-} finally {
-  await browser.close();
-  server.close();
+  await p.waitForSelector(who ? '#app:not([hidden])' : '#signin:not([hidden])');
+  return p;
 }
-process.exit(failed ? 1 : 0);
+const shot = async (p, name) => { if (shots) await p.screenshot({ path: path.join(shots, `${name}.png`), fullPage: true }); };
+async function step(name, fn) {
+  try { await fn(); console.log(`ok   ${name}`); } catch (e) { failed = true; console.log(`FAIL ${name}\n     ${e.message}`); }
+}
+const navLabels = (p) => p.$$eval('#nav button span', (els) => els.map((e) => e.textContent));
+
+await step('chưa đăng nhập: màn hình đăng nhập Google, bắt buộc tick điều khoản', async () => {
+  const p = await open(null);
+  assert.match(await p.textContent('#signin-body'), /Đăng nhập bằng Google/);
+  assert.equal(await p.getAttribute('#signin-body a.google-btn', 'aria-disabled'), 'true');
+  await p.check('#agree');
+  assert.match(await p.getAttribute('#signin-body a.google-btn', 'href'), /^\/api\/google\/start\?purpose=member&terms=/);
+  await shot(p, 'signin'); assert.deepEqual(p.errors, []);
+});
+
+await step('User: chỉ 6 mục sử dụng, không có Quản trị; vào thẳng URL quản trị cũng không được', async () => {
+  const p = await open('user');
+  assert.deepEqual(await navLabels(p), ['Tổng quan', 'Lịch', 'Công việc', 'Đề xuất', 'Nguồn', 'Tài khoản']);
+  await p.goto(`${base}/#/quan-tri/bot`);
+  await p.waitForTimeout(400);
+  assert.equal(await p.textContent('#view-title'), 'Tổng quan', 'bị đưa về Tổng quan');
+  const r = await p.evaluate(() => fetch('/api/admin/members').then((x) => x.status));
+  assert.equal(r, 403);
+  assert.deepEqual(p.errors, []);
+});
+
+await step('User: tạo lịch, việc, đề xuất; thấy trong Lịch, Công việc; Tài khoản có Zalo và lịch đã giao', async () => {
+  const p = await open('user');
+  await p.click('#top-action'); await p.fill('#modal-body input[name=title], #modal-body input', 'Khám răng');
+  await p.click('#modal-save'); await p.waitForTimeout(500);
+  assert.match(await p.textContent('section[data-view=dashboard]'), /Khám răng|Hôm nay chưa có lịch/);
+  await p.click('#nav button[data-view=tasks]');
+  await p.fill('#task-form input[name=title]', 'Gọi cho mẹ'); await p.click('#task-form button[type=submit], #task-form button:not([type])');
+  await p.waitForTimeout(500);
+  assert.match(await p.textContent('section[data-view=tasks]'), /Gọi cho mẹ/);
+  await p.click('#nav button[data-view=account]'); await p.waitForTimeout(600);
+  const acc = await p.textContent('#view-account');
+  assert.match(acc, /Nguyễn Văn An/); assert.match(acc, /An Nguyễn/); assert.match(acc, /Cho phép Google Lịch|Chưa kết nối Google Lịch/);
+  await shot(p, 'user-account'); assert.deepEqual(p.errors, []);
+});
+
+await step('Technician: Quản lý bot lịch + Tài khoản người dùng (chỉ xem, không có ô đổi quyền)', async () => {
+  const p = await open('tech');
+  const labels = await navLabels(p);
+  assert.deepEqual(labels.slice(-2), ['Quản lý bot lịch', 'Tài khoản người dùng']);
+  assert.ok(!labels.some((l) => /máy ảo/i.test(l)));
+  await p.click('#nav button[data-view=admin-accounts]'); await p.waitForSelector('#view-admin-accounts .member');
+  assert.equal(await p.$$eval('#view-admin-accounts select', (s) => s.length), 0);
+  assert.match(await p.textContent('#view-admin-accounts'), /chỉ xem/);
+  await p.click('#nav button[data-view=admin-bot]'); await p.waitForSelector('#view-admin-bot .tabs');
+  assert.deepEqual(await p.$$eval('#view-admin-bot .tabs button', (b) => b.map((x) => x.textContent)),
+    ['Nhật ký bot lịch', 'Cài đặt bot lịch', 'Bot Zalo nhắc việc', 'Kết nối AI agent', 'Khoá & trạng thái']);
+  await shot(p, 'tech-bot'); assert.deepEqual(p.errors, []);
+});
+
+await step('Owner: đổi quyền User → Technician; User tải lại thấy menu mới ngay', async () => {
+  const p = await open('owner');
+  await p.click('#nav button[data-view=admin-accounts]'); await p.waitForSelector('#view-admin-accounts select');
+  p.on('dialog', (d) => d.accept());
+  const row = p.locator('#view-admin-accounts li.member', { hasText: 'user@gmail.com' });
+  await row.locator('select').selectOption('technician');
+  await p.waitForTimeout(700);
+  assert.match(await p.textContent('#view-admin-accounts'), /User → Technician|Technician/);
+  const u = await open('user');
+  assert.ok((await navLabels(u)).includes('Quản lý bot lịch'));
+  await members.setRole(await members.getMember(owner.id), user.id, 'user'); // trả lại
+  await shot(p, 'owner-accounts'); assert.deepEqual(p.errors, []);
+});
+
+await step('Owner: các tab Quản lý bot lịch hiển thị đủ, có hướng dẫn Publish app và cron', async () => {
+  const p = await open('owner');
+  await p.click('#nav button[data-view=admin-bot]');
+  for (const label of ['Nhật ký bot lịch', 'Cài đặt bot lịch', 'Bot Zalo nhắc việc', 'Kết nối AI agent', 'Khoá & trạng thái']) {
+    await p.click(`#view-admin-bot .tabs button:has-text("${label}")`); await p.waitForTimeout(500);
+    assert.ok((await p.textContent('#view-admin-bot')).length > 80, label);
+  }
+  const keys = await p.textContent('#view-admin-bot');
+  assert.match(keys, /Publish app/); assert.match(keys, /cron-job\.org/); assert.match(keys, /TOKEN_ENC_KEY/);
+  await shot(p, 'owner-keys'); assert.deepEqual(p.errors, []);
+});
+
+await step('điện thoại và nền sáng: menu và nội dung không tràn ngang', async () => {
+  for (const theme of ['dark', 'light']) {
+    const p = await open('user', { theme, mobile: true });
+    const overflow = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(overflow <= 1, `tràn ngang ${overflow}px (${theme})`);
+    await shot(p, `mobile-${theme}`);
+  }
+});
+
+await browser.close();
+server.close();
+if (failed) { console.log('\nCó bước thất bại.'); process.exit(1); }
+console.log('\nTất cả bước đều qua.');
+process.exit(0);

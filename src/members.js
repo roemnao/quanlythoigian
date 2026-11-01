@@ -8,7 +8,7 @@ import { ROLES, can, isOwnerEmail, permsOf, roleOf } from './roles.js';
 import { revokeAndDelete } from './gtoken.js';
 
 // Đổi số này khi sửa Điều khoản / Chính sách: mọi người phải đồng ý lại trước khi nhận lệnh mới.
-export const TERMS_VERSION = '2026-10-24';
+export const TERMS_VERSION = '2026-11-01';
 
 const DAY = 24 * 3600;
 export const COMMAND_KEEP_DAYS = 30;
