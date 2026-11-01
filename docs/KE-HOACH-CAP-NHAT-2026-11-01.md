@@ -20,6 +20,39 @@ Quy ước tên gọi trong file:
 
 ---
 
+## Trạng thái thực hiện (cập nhật sau khi code xong)
+
+**Đã làm xong trong code, có kiểm thử** (nhánh `claude/beautiful-ramanujan-wq6u6u` của cả hai repo, chưa tạo PR):
+
+| Mục | Kết quả |
+|---|---|
+| P1 PyloS tách khỏi web | Xong. Bỏ cấu hình từ web, nhịp tim, session, đăng nhập Gmail qua web. Test `test_no_web_coupling.py` |
+| P2 PyloS đăng nhập Google riêng | Xong. Một Gmail (`ADMIN_EMAIL`), OAuth riêng, PKCE. Test `test_google_login.py`. Hướng dẫn `docs/dang-nhap-google.md` |
+| P3 PyloS giao diện vàng–đen | Xong, đã chụp thử nền tối và sáng |
+| PyloS lịch riêng theo người nhắn | Xong. `schedule_web.py` gửi `zaloUid` |
+| W1 phân quyền, Gmail duy nhất, một tên miền | Xong. `src/roles.js`, test bảng quyền cho từng route (`roles.test.js`), `primary-host.test.js` |
+| W2 dữ liệu riêng từng người + di trú | Xong. `userstore.js`, `migrate.js`, giới hạn, chặn địa chỉ nội bộ |
+| W3 Google Lịch tự động | Xong. Đăng nhập xin luôn quyền Google Lịch, máy chủ giữ token mã hoá, ghi lịch ngay lúc giao, cron ghi bù, "kết nối lại" khi bị gỡ quyền |
+| W4 giao diện gộp | Xong. 6 mục sử dụng + Tài khoản + Quản trị theo quyền, kiểm thử trình duyệt 3 vai trò (`npm run test:e2e`) |
+| W5 dọn dẹp | API cũ trả 410; `scripts/cleanup-w5.mjs` (chạy tay sau ≥ 7 ngày) |
+
+Kết quả kiểm thử: web 58/58 và e2e 7/7; PyloS 252 (không tính `test_desktop.py`, cần `pip install -e ".[desktop]"`).
+
+**Chưa làm được, người vận hành phải làm** (code không thay được):
+
+1. Google Cloud của web: **Publish app** (Audience → In production). Thêm redirect URI mới `https://<tên miền chính>/api/google/callback` và JavaScript origin.
+2. Google Cloud **project mới** cho PyloS (`PyloS Admin`), điền `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_GOOGLE_CLIENT_SECRET`, `ADMIN_EMAIL` ở máy Windows và VPS.
+3. Vercel: đặt `OWNER_EMAILS`, `TOKEN_ENC_KEY`, `CRON_SECRET`, `PRIMARY_HOST`; Preview đặt `KV_PREFIX`/`STORAGE_KEY` riêng; Redeploy.
+4. cron-job.org: job mỗi 5 phút.
+5. **Sao lưu Upstash** (`node scripts/backup.mjs`) trước khi deploy bản web mới.
+6. **Chép cấu hình bot đang đặt trên web** (Hệ thống → Cấu hình bot, hoặc `userdata/system/remote_config.json`) vào `settings.env` của PyloS (Windows và VPS) trước khi cập nhật PyloS.
+7. Cập nhật VPS (`git pull` + `systemctl restart pylos-admin pylos-bot`) và build lại exe (`scripts\build-exe.ps1`).
+8. Thử với Google thật (mục 6 của file này) vì kiểm thử tự động dùng Google giả; sau 8 ngày kiểm tra quyền không hết hạn.
+
+**Khác với kế hoạch ban đầu (đã quyết định khi làm):** web không có "máy ảo" (đính chính ở đầu file); PyloS một Gmail, không phân quyền; đường dẫn quản trị là `/api/admin/*` (khoá API ở `/api/admin/keys`); Owner chính (người nhận nhắc việc Zalo và nơi giữ ghép nối Zalo của web) là Owner đầu tiên theo thứ tự tạo tài khoản; `/api/me/commands` đã bỏ vì lịch được ghi từ máy chủ.
+
+---
+
 ## 0. Mốc ban đầu (đã kiểm tra ngày 01/11/2026)
 
 - Code lấy từ `main` mới nhất của cả hai repo:
