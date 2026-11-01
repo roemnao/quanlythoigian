@@ -3,6 +3,9 @@
 > File này có **giống hệt nhau** ở hai repo: `roemnao/quanlythoigian` và `roemnao/PyloS` (thư mục `docs/`).
 > Sửa ở repo nào thì chép sang repo kia.
 >
+> **Đính chính 01/11/2026:** web bot lịch **không có mục máy ảo** (bot lịch chạy trên Vercel, không chạy trên máy ảo). Máy ảo
+> là của PyloS. Phân quyền Owner / Technician / User **chỉ có ở web bot lịch**; PyloS chỉ một người dùng, không phân quyền.
+>
 > Đọc theo thứ tự: mục 0 → 1 → 2, rồi làm từng giai đoạn ở mục 3 (PyloS) và mục 4 (web). Mục 5 là thứ tự đưa lên
 > production, mục 6 là kiểm thử toàn hệ thống, mục 7 là bảng lỗi có thể gặp.
 
@@ -79,16 +82,26 @@ Nguyên nhân (đã đọc code):
 
 | Câu hỏi | Chốt |
 |---|---|
-| "Quản lý bot", "quản lý máy ảo" trên iforgotmywayhome là gì? | **Chỉ là của web**. *Quản lý bot* = bot lịch của web: nhật ký giao lịch, cài đặt bot lịch (tên bot, link chat, email được tạo tài khoản), bot Zalo nhắc việc của web, khoá agent. *Quản lý máy ảo* = hạ tầng của web: khoá API (Gemini, token Zalo, Google OAuth), lưu trữ Upstash, cron, tên miền. **PyloS và VPS chỉ quản lý ở trang riêng của PyloS** (giao diện vàng–đen). |
+| Web bot lịch có mục "quản lý máy ảo" không? | **Không.** (Đính chính ngày 01/11/2026: yêu cầu gốc nhầm giữa PyloS và bot lịch.) Bot lịch chạy trên Vercel, **không chạy trên máy ảo**, nên web **không có mục máy ảo nào**. Máy ảo (VPS `unousgrowth.com`) là việc của **PyloS**, chỉ quản lý ở trang riêng của PyloS. |
+| "Quản lý bot" trên iforgotmywayhome là gì? | Quản lý **bot lịch** của web, một mục duy nhất: nhật ký giao lịch, cài đặt bot lịch (tên bot, link chat, email được tạo tài khoản), bot Zalo nhắc việc của web, khoá agent, cùng các khoá và trạng thái bot lịch cần để chạy (khoá Gemini, token Zalo, Google OAuth, lưu trữ, cron). |
+| Phân quyền áp dụng ở đâu? | **Chỉ ở web bot lịch** (Owner / Technician / User). **PyloS không phân quyền**: chỉ một người (chủ hệ thống) truy cập, đăng nhập bằng đúng một Gmail (`ADMIN_EMAIL`) hoặc mã `ADMIN_TOKEN`. |
 | Role **User** có gì? | **Chỉ chức năng sử dụng bình thường**: Tổng quan, Lịch, Công việc, Đề xuất, Nguồn, Tài khoản. Không thấy mục quản trị nào. |
-| Giữ kết nối nào giữa PyloS và web? | **Chỉ API bot lịch** bằng một khoá `SCHEDULE_API_KEY`: giao / sửa / huỷ / xem lịch đã giao, liên kết Zalo bằng mã 6 số. **Bỏ**: cấu hình bot từ web, nhịp tim, gửi session, đăng nhập Gmail qua web, kết nối VPS qua web. |
+| Giữ kết nối nào giữa PyloS và web? | **Chỉ API bot lịch** bằng một khoá `SCHEDULE_API_KEY`: giao / sửa / huỷ / xem lịch đã giao, liên kết Zalo bằng mã 6 số. **Bỏ**: cấu hình bot từ web, nhịp tim, gửi session, đăng nhập Gmail qua web, kết nối VPS qua web. Web không biết gì về máy ảo của PyloS. |
+
+Tóm tắt quyền trên web bot lịch sau đính chính:
+
+| Vai trò | Sử dụng bình thường | Quản lý bot lịch | Tài khoản người dùng |
+|---|:-:|:-:|:-:|
+| Owner | ✔ | ✔ | xem + cấp quyền |
+| Technician | ✔ | ✔ | chỉ xem |
+| User | ✔ | ✘ | ✘ |
 
 Quyết định phụ do người lập kế hoạch đặt (có lý do, ai muốn đổi thì sửa ở đây trước khi làm):
 
 - Tool `schedule_web.py` (bot thêm lịch / việc / xem lịch qua Zalo) **được giữ** vì là chức năng của bot lịch và dùng chung
   khoá agent. Sau khi web có dữ liệu riêng từng người (W2), các API này **ghi vào dữ liệu của chính người nhắn**
   (tìm thành viên theo `zaloUid`), không còn ghi vào dữ liệu chủ web.
-- **Technician có đủ quyền "quản lý bot" và "quản lý máy ảo" như Owner** (đúng yêu cầu). Khác Owner duy nhất ở mục Tài khoản
+- **Technician có đủ quyền "quản lý bot lịch" như Owner** (đúng yêu cầu). Khác Owner duy nhất ở mục Tài khoản
   người dùng: chỉ xem, **mọi thao tác sửa tài khoản người khác (đổi quyền, gỡ Zalo, xoá) chỉ Owner làm được**.
 - Bỏ hẳn tài khoản quản trị `username/mật khẩu` và `APP_PASSWORD`. Mọi người đăng nhập bằng Gmail. Đường cứu hộ khi mất
   quyền Owner: biến môi trường `OWNER_EMAILS` (xem W1).
@@ -99,6 +112,10 @@ Quyết định phụ do người lập kế hoạch đặt (có lý do, ai mu�
 ---
 
 ## 3. PyloS
+
+PyloS là bot Zalo **và** phần máy ảo (VPS `unousgrowth.com`: xem trạng thái, cập nhật code, chuyển bot Máy này ↔ VPS).
+Mọi thứ về máy ảo **chỉ nằm ở PyloS**, web bot lịch không đụng tới. PyloS **chỉ chủ hệ thống truy cập** nên **không phân
+quyền**: không có Owner / Technician / User, chỉ một Gmail (`ADMIN_EMAIL`) hoặc mã `ADMIN_TOKEN`.
 
 Ba giai đoạn, mỗi giai đoạn một PR riêng vào `main` của PyloS. Làm **trước** web (lý do ở mục 5).
 
@@ -168,14 +185,15 @@ Ba giai đoạn, mỗi giai đoạn một PR riêng vào `main` của PyloS. Là
 ### P2. Đăng nhập Google riêng của PyloS
 
 **Mục tiêu:** trang quản lý PyloS (máy Windows và VPS) đăng nhập bằng Google **qua OAuth client của chính PyloS**, không gọi
-web. Ai được vào: danh sách `ADMIN_EMAILS` trong `settings.env`. Mã truy cập `ADMIN_TOKEN` vẫn giữ làm đường dự phòng.
+web. **PyloS không phân quyền**: chỉ chủ hệ thống truy cập, nên chỉ có **một** Gmail được vào (`ADMIN_EMAIL` trong
+`settings.env`). Không có vai trò, không có danh sách người dùng. Mã truy cập `ADMIN_TOKEN` vẫn giữ làm đường dự phòng.
 
 **Chuẩn bị trên Google Cloud (chủ hệ thống làm một lần, ~10 phút)**
 
 1. https://console.cloud.google.com → tạo **project mới** tên `PyloS Admin` (tách khỏi project của web để hai bên độc lập).
 2. Google Auth Platform → **Branding**: App name `PyloS`, email hỗ trợ. **Audience**: External. Không cần thêm scope nào
    (chỉ dùng `openid email`, là scope không nhạy cảm, không cần Google xác minh).
-   Nếu để trạng thái *Testing* thì thêm các Gmail quản trị vào *Test users*; hoặc bấm **Publish app** (không cần xác minh
+   Nếu để trạng thái *Testing* thì thêm Gmail của chủ hệ thống vào *Test users*; hoặc bấm **Publish app** (không cần xác minh
    vì không có scope nhạy cảm).
 3. **Clients → Create client → Web application**. *Authorized redirect URIs*:
    - `http://127.0.0.1:8081/api/auth/google/callback`
@@ -189,16 +207,17 @@ web. Ai được vào: danh sách `ADMIN_EMAILS` trong `settings.env`. Mã truy 
 ```
 ADMIN_GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
 ADMIN_GOOGLE_CLIENT_SECRET=GOCSPX-xxxx        # khoá bí mật: chỉ đặt mới, không hiện lại
-ADMIN_EMAILS=chu.bot@gmail.com, ky.thuat@gmail.com
+ADMIN_EMAIL=chu.he.thong@gmail.com           # đúng một Gmail, không phải danh sách
 ```
 
 **Bước làm**
 
 1. `src/bot/config.py`: thêm `admin_google_client_id: str`, `admin_google_client_secret: str`,
-   `admin_emails: tuple[str, ...]` (tách bằng dấu phẩy / khoảng trắng, chữ thường).
+   `admin_email: str` (một email, `strip().lower()`; có dấu phẩy hoặc khoảng trắng bên trong → `ConfigError`
+   "ADMIN_EMAIL chỉ được một Gmail").
 2. `src/bot/ui/admin/settings_file.py`:
    - `FieldSpec("ADMIN_GOOGLE_CLIENT_ID", "Google Client ID của trang quản lý", group="Đăng nhập")`
-   - `FieldSpec("ADMIN_EMAILS", "Gmail được vào trang quản lý", "Cách nhau dấu phẩy.", group="Đăng nhập")`
+   - `FieldSpec("ADMIN_EMAIL", "Gmail của chủ hệ thống (người duy nhất được vào)", group="Đăng nhập")`
    - `SECRETS["ADMIN_GOOGLE_CLIENT_SECRET"] = "Google Client secret của trang quản lý"`
    - Kiểm tra định dạng giống web: Client ID phải khớp `^[\w-]+\.apps\.googleusercontent\.com$`.
 3. File mới `src/bot/ui/admin/google_login.py` (không phụ thuộc FastAPI để test dễ):
@@ -210,10 +229,10 @@ ADMIN_EMAILS=chu.bot@gmail.com, ky.thuat@gmail.com
    - `decode_id_token(id_token, client_id)`: kiểm tra `aud == client_id`, `iss in {accounts.google.com, https://accounts.google.com}`,
      `exp` chưa qua, `email_verified` true (token nhận trực tiếp qua HTTPS từ Google nên không cần kiểm chữ ký; giống
      `quanlythoigian/src/google.js::decodeIdToken`).
-   - `email_allowed(email, admin_emails)`: so khớp chữ thường, chính xác từng email.
+   - `email_allowed(email, admin_email)`: so khớp chữ thường, đúng một email. Không có vai trò, không có phân quyền.
 4. `src/bot/ui/admin/admin_web_server.py` (thay khối `# ---------- đăng nhập bằng Gmail`):
    - `base_url()` = `ADMIN_PUBLIC_URL` nếu đặt, ngược lại `http://127.0.0.1:{port}`. `redirect_uri = base + "/api/auth/google/callback"`.
-   - `GET /api/auth/options` → `{"google": bool(client_id and secret and admin_emails)}`.
+   - `GET /api/auth/options` → `{"google": bool(client_id and secret and admin_email)}`.
    - `POST /api/auth/google/start` → tạo mã, trả `{"code", "url": base + "/api/auth/google/begin?code=<mã>", "expiresIn": 600}`.
    - `GET /api/auth/google/begin?code=` → 302 sang Google (`state = mã + "." + nonce`).
    - `GET /api/auth/google/callback?code=&state=` → đổi mã, kiểm email, đặt trạng thái `approved` / `denied`; trả **trang HTML
@@ -223,7 +242,7 @@ ADMIN_EMAILS=chu.bot@gmail.com, ky.thuat@gmail.com
      phiên 12 giờ từ `AdminSessions`, hoặc khoá thiết bị `AdminDevices.issue()` nếu có `device`). Mã đã `ok` chỉ đọc được 1 lần.
    - Xoá `/api/auth/gmail/start`, `/api/auth/gmail/poll`.
    - `/api/remote-login/start` và `/api/remote-login/poll`: đổi đường dẫn gọi VPS thành `auth/google/start`, `auth/google/poll`;
-     sửa thông báo lỗi: "VPS cần đặt ADMIN_GOOGLE_CLIENT_ID, ADMIN_GOOGLE_CLIENT_SECRET và ADMIN_EMAILS".
+     sửa thông báo lỗi: "VPS cần đặt ADMIN_GOOGLE_CLIENT_ID, ADMIN_GOOGLE_CLIENT_SECRET và ADMIN_EMAIL".
    - Middleware `guard`: `/api/auth/*` vẫn không cần mã truy cập (đã có sẵn). Kiểm lại `begin` và `callback` là GET nên không bị
      chặn Origin.
 5. `src/bot/ui/admin/static/admin_page.js` + `index.html`: đổi `gmail*` thành `google*`, gọi `/api/auth/google/start|poll`;
@@ -232,8 +251,9 @@ ADMIN_EMAILS=chu.bot@gmail.com, ky.thuat@gmail.com
    "Điều kiện: VPS phải đặt SCHEDULE_API_KEY…" → thay bằng 3 biến mới.
 7. Kiểm thử: viết lại `tests/test_gmail_connect.py` thành `tests/test_google_login.py`, dùng `httpx.MockTransport` giả Google:
    - start → begin trả 302 tới `accounts.google.com` có `code_challenge` và `state` chứa mã.
-   - callback với email trong `ADMIN_EMAILS` → poll trả `ok` + token, poll lần 2 trả `expired`.
-   - email ngoài danh sách → `denied`, không có token.
+   - callback với đúng `ADMIN_EMAIL` → poll trả `ok` + token, poll lần 2 trả `expired`.
+   - email khác `ADMIN_EMAIL` → `denied`, không có token.
+   - `ADMIN_EMAIL` có 2 email (`a@x.com, b@x.com`) → lỗi cấu hình, nút đăng nhập Google ẩn.
    - `state` sai / mã hết hạn (giả đồng hồ) / `id_token` sai `aud` / `email_verified=false` → bị từ chối.
    - `device` có giá trị → trả khoá thiết bị `dev_…`, lưu băm trong `admin_devices.json`.
    - Không yêu cầu nào đi tới `server_client` (web) trong suốt luồng.
@@ -243,7 +263,7 @@ ADMIN_EMAILS=chu.bot@gmail.com, ky.thuat@gmail.com
 
 1. Máy Windows: điền 3 biến, `python -m bot admin start --open` → Đăng xuất → **Đăng nhập bằng Google** → tab Google mở,
    chọn Gmail trong danh sách → tab báo "Đã đăng nhập" → trang quản lý tự vào trong ≤ 4 giây.
-2. Thử Gmail không có trong `ADMIN_EMAILS` → trang báo không có quyền, trang quản lý vẫn ở màn hình đăng nhập.
+2. Thử Gmail khác `ADMIN_EMAIL` → trang báo không có quyền, trang quản lý vẫn ở màn hình đăng nhập.
 3. Xoá `SCHEDULE_API_KEY` khỏi `settings.env` → đăng nhập Google **vẫn chạy** (chứng minh đã tách khỏi web).
 4. VPS: đặt 3 biến trên VPS, `systemctl restart pylos-admin`. Trên máy Windows → trang Máy chủ → **Kết nối VPS bằng Google** →
    đăng nhập ở `https://unousgrowth.com/...` → máy Windows nhận khoá thiết bị, công tắc **Máy này | VPS** hiện ra.
@@ -341,13 +361,15 @@ Thứ tự bắt buộc: **W0 → W1 → W2 → W3 → W4 → W5**. Mỗi bướ
 
 ### W1. Một kiểu đăng nhập (Gmail) + phân quyền Owner / Technician / User + gộp về một tên miền
 
+> Phân quyền **chỉ có ở web bot lịch**. Web **không có mục máy ảo** (bot lịch chạy trên Vercel). PyloS không phân quyền (xem P2).
+
 **Mô hình quyền** (đặt ở file mới `src/roles.js`, mọi kiểm tra quyền đều gọi file này):
 
 ```js
 export const ROLES = ['owner', 'technician', 'user'];
 export const PERMS = {
-  owner:      ['use', 'bot:read', 'bot:write', 'infra:read', 'infra:write', 'accounts:read', 'accounts:write'],
-  technician: ['use', 'bot:read', 'bot:write', 'infra:read', 'infra:write', 'accounts:read'],
+  owner:      ['use', 'bot:read', 'bot:write', 'accounts:read', 'accounts:write'],
+  technician: ['use', 'bot:read', 'bot:write', 'accounts:read'],
   user:       ['use'],
 };
 export const can = (member, perm) => Boolean(member && PERMS[member.role || 'user']?.includes(perm));
@@ -356,10 +378,8 @@ export const can = (member, perm) => Boolean(member && PERMS[member.role || 'use
 | Chức năng | Quyền cần | Owner | Technician | User |
 |---|---|:-:|:-:|:-:|
 | Tổng quan, Lịch, Công việc, Đề xuất, Nguồn, Tài khoản của mình | `use` | ✔ | ✔ | ✔ |
-| Quản lý bot: xem nhật ký bot lịch, trạng thái bot nhắc việc | `bot:read` | ✔ | ✔ | ✘ |
-| Quản lý bot: sửa cài đặt bot lịch, bot Zalo nhắc việc, tạo/thu hồi khoá agent | `bot:write` | ✔ | ✔ | ✘ |
-| Quản lý máy ảo: xem trạng thái hạ tầng | `infra:read` | ✔ | ✔ | ✘ |
-| Quản lý máy ảo: khoá API, chạy cron tay, webhook Zalo | `infra:write` | ✔ | ✔ | ✘ |
+| Quản lý bot lịch: xem nhật ký bot lịch, trạng thái bot lịch (lưu trữ, Gemini, Zalo, Google, cron lần cuối) | `bot:read` | ✔ | ✔ | ✘ |
+| Quản lý bot lịch: sửa cài đặt bot lịch, bot Zalo nhắc việc, khoá API của bot lịch (Gemini, token Zalo, Google OAuth), webhook Zalo, chạy cron tay, tạo/thu hồi khoá agent | `bot:write` | ✔ | ✔ | ✘ |
 | Tài khoản người dùng: xem danh sách | `accounts:read` | ✔ | ✔ | ✘ |
 | Tài khoản người dùng: đổi quyền, gỡ Zalo, xoá tài khoản người khác | `accounts:write` | ✔ | ✘ | ✘ |
 
@@ -388,7 +408,7 @@ export const can = (member, perm) => Boolean(member && PERMS[member.role || 'use
        req.me = me; next();
      });
      ```
-     Gắn **từng route** với quyền ở bảng trên, ví dụ `app.put('/api/settings/keys', need('infra:write'), …)`,
+     Gắn **từng route** với quyền ở bảng trên, ví dụ `app.put('/api/settings/keys', need('bot:write'), …)`,
      `app.get('/api/admin/calbot-log', need('bot:read'), …)`, `app.delete('/api/admin/members/:id', need('accounts:write'), …)`.
      Quyền **đọc từ Upstash mỗi yêu cầu** (không ghi vào cookie), nên đổi quyền có hiệu lực ngay.
    - API mới `PUT /api/admin/members/:id/role {role}` (`accounts:write`), `GET /api/admin/audit` (`accounts:read`).
@@ -467,7 +487,7 @@ export const can = (member, perm) => Boolean(member && PERMS[member.role || 'use
 2. Chép `events, tasks, goals, suggestions, sources, pomodoros, google, meta.reminded` từ `quanlythoigian:db` sang
    `udata:<ownerId>`.
 3. **Không xoá** dữ liệu ở `quanlythoigian:db` (rollback được). W5 mới dọn.
-4. Ghi `migrated:w2 = {at, ownerId, counts}`; trang Quản trị → Hạ tầng hiện dòng "Đã chuyển dữ liệu cũ sang tài khoản <email>".
+4. Ghi `migrated:w2 = {at, ownerId, counts}`; trang Quản trị → Quản lý bot lịch → Trạng thái hiện dòng "Đã chuyển dữ liệu cũ sang tài khoản <email>".
 
 **Kiểm thử**
 
@@ -482,7 +502,7 @@ export const can = (member, perm) => Boolean(member && PERMS[member.role || 'use
 
 | Hiện tượng | Nguyên nhân | Xử lý |
 |---|---|---|
-| Owner vào thấy lịch trống | Di trú chưa chạy (không có Owner lúc deploy) | Đặt `OWNER_EMAILS`, đăng nhập Owner, gọi `POST /api/admin/migrate` (`infra:write`) để chạy lại |
+| Owner vào thấy lịch trống | Di trú chưa chạy (không có Owner lúc deploy) | Đặt `OWNER_EMAILS`, đăng nhập Owner, gọi `POST /api/admin/migrate` (`bot:write`) để chạy lại |
 | Dữ liệu nhân đôi | Hai lambda di trú cùng lúc | Khoá `migrating` + `migrated:w2` (test có) |
 | Cron quá 60 giây | Nhiều người có nguồn web (Gemini chậm) | Giảm lô xuống 10 người, nguồn `web` mỗi người đồng bộ ≥ 60 phút/lần |
 | Hết lệnh Upstash miễn phí | Mỗi lần mở trang đọc cả `udata:<id>` | `/api/me/state` chỉ đọc 1 khoá; giao diện không tự tải lại nhanh hơn 60 giây; theo dõi Upstash → *Usage* trong 3 ngày đầu |
@@ -551,7 +571,7 @@ cho phép là web tự đồng bộ, không phải bấm lại mỗi giờ, khô
 **Kiểm thử tự động**
 
 - `test/gtoken.test.js`: mã hoá → giải mã đúng; sai khoá → lỗi rõ ràng (không lộ token); thiếu `TOKEN_ENC_KEY` → web vẫn chạy nhưng
-  `google.status='unavailable'` và Hạ tầng báo đỏ.
+  `google.status='unavailable'` và Quản lý bot lịch → Trạng thái báo đỏ.
 - `test/google-member.test.js` (fetch giả Google, giống `test/google.test.js`):
   - Callback có đủ scope + refresh token → `connected`, đồng bộ lần đầu được gọi.
   - Có scope nhưng không có refresh token, chưa có token cũ → 302 sang Google với `prompt=consent`; lần 2 vẫn không có → không lặp,
@@ -589,7 +609,7 @@ cho phép là web tự đồng bộ, không phải bấm lại mỗi giờ, khô
 | Google không trả `refresh_token` | Người dùng đã từng đồng ý trước đây | Luồng `prompt=consent` ở bước 3 của callback; nếu vẫn không có: gỡ quyền ở myaccount.google.com/permissions rồi đăng nhập lại |
 | `Error 403: access_denied` khi đăng nhập | Gmail không nằm trong 100 test user (app Testing) hoặc vượt 100 người dùng của app chưa xác minh | Publish app; quá 100 người thì gửi Google xác minh scope `calendar.events` (mất vài tuần, cần video demo + chính sách quyền riêng tư) |
 | Lịch bị tạo **trùng** | Đổi hàm `googleEventId` | Giữ `qltgm<id>` cho lịch được giao và `qltg<id>` cho lịch tự tạo; test `drain.test.js` bắt |
-| Lịch được giao không lên dù đã kết nối | `waitUntil` bị cắt khi hàm trả lời xong quá lâu, hoặc cron-job.org chưa chạy | Kiểm tra Vercel Logs tìm `[drain]`; kiểm tra cron-job.org có chạy mỗi 5 phút (Hạ tầng hiện "cron chạy lần cuối") |
+| Lịch được giao không lên dù đã kết nối | `waitUntil` bị cắt khi hàm trả lời xong quá lâu, hoặc cron-job.org chưa chạy | Kiểm tra Vercel Logs tìm `[drain]`; kiểm tra cron-job.org có chạy mỗi 5 phút (Quản lý bot lịch → Trạng thái hiện "cron chạy lần cuối") |
 | `TOKEN_ENC_KEY` bị đổi / mất | Mọi token không giải mã được | Coi như `reconnect` cho tất cả; **ghi rõ trong README: không đổi khoá này** |
 | `Rate Limit Exceeded` / `quotaExceeded` từ Calendar API | Nhiều người kéo lịch cùng lúc | Kéo lịch chỉ khi mở trang Lịch (10 phút/lần) + cron theo lô; lỗi loại `later` tự thử lại |
 | Người dùng than "web xem được hết lịch của tôi" | Scope `calendar.events` cho đọc mọi sự kiện | Ghi rõ trong Chính sách quyền riêng tư; web chỉ lưu sự kiện 7 ngày trước – 90 ngày sau, không lưu ghi chú quá 1.000 ký tự (giữ `PAST_DAYS`/`FUTURE_DAYS`) |
@@ -608,17 +628,16 @@ cho phép là web tự đồng bộ, không phải bấm lại mỗi giờ, khô
 | | Đề xuất | mọi người | `renderInbox` (dán văn bản cho AI, duyệt / bỏ / duyệt tất cả) |
 | | Nguồn | mọi người | `renderSources` (ICS, trang web) |
 | **Tài khoản** | Tài khoản | mọi người | mới: hồ sơ Gmail; **Google Lịch** (trạng thái, kết nối / kết nối lại / ngắt, lần đồng bộ cuối); **Zalo** (lấy mã 6 số, gỡ liên kết — chuyển từ `public/app/app.js::zaloStep`); **Lịch được giao** (lịch sử từ `ghist`, thay `historyCard`); điều khoản; Đăng xuất; Xoá tài khoản. Owner có thêm link `.ics` |
-| Quản trị | Quản lý bot | Owner, Technician | từ `public/admin/system.js`: tab **Nhật ký bot lịch** (`sysCalbot`); tab **Cài đặt bot lịch** (tên bot, link chat, email/tên miền được tạo tài khoản — phần cài đặt của `sysMembers`); thẻ **Bot Zalo nhắc việc** (`zalo-box`); thẻ **Kết nối AI agent** (`renderAgent`) |
-| | Quản lý máy ảo | Owner, Technician | từ `renderSettings`: **Trạng thái** (lưu trữ, Gemini, Zalo, Google, cron lần cuối, di trú), **Khoá API** (`keys-form`), Google OAuth URIs để chép, nút chạy cron |
+| Quản trị | Quản lý bot lịch | Owner, Technician | Một mục duy nhất, các tab: **Nhật ký bot lịch** (`sysCalbot`); **Cài đặt bot lịch** (tên bot, link chat, email/tên miền được tạo tài khoản — phần cài đặt của `sysMembers`); **Bot Zalo nhắc việc** (`zalo-box`); **Kết nối AI agent** (`renderAgent`); **Khoá & trạng thái** (từ `renderSettings`: trạng thái lưu trữ, Gemini, Zalo, Google, cron lần cuối, di trú; form khoá API `keys-form`; Google OAuth URIs để chép; nút chạy cron). **Không có mục máy ảo** |
 | | Tài khoản người dùng | Owner, Technician | danh sách từ `sysMembers` + cột **Quyền**, **Google Lịch**, **Zalo**, lần cuối hoạt động; Owner có ô chọn quyền, gỡ Zalo, xoá; Technician chỉ xem (không có nút); **Nhật ký phân quyền** (`/api/admin/audit`) |
 
 **Bước làm**
 
 1. Chuyển code giao diện thành module ES (giữ "không có script nội tuyến", CSP `script-src 'self'`):
    - `public/app/app.js` → khung: khởi động, đăng nhập, điều khoản, menu theo `me.perms`, định tuyến bằng `location.hash`
-     (`#/lich`, `#/cong-viec`, `#/de-xuat`, `#/nguon`, `#/tai-khoan`, `#/quan-tri/bot`, `#/quan-tri/may-ao`, `#/quan-tri/tai-khoan`).
+     (`#/lich`, `#/cong-viec`, `#/de-xuat`, `#/nguon`, `#/tai-khoan`, `#/quan-tri/bot`, `#/quan-tri/tai-khoan` (không có trang máy ảo)).
    - `public/app/views/` mới: `dashboard.js`, `calendar.js`, `tasks.js`, `inbox.js`, `sources.js`, `account.js`,
-     `admin-bot.js`, `admin-infra.js`, `admin-accounts.js`. Mỗi file `export function render(root, ctx)`.
+     `admin-bot.js`, `admin-accounts.js`. Mỗi file `export function render(root, ctx)`.
    - Lấy hàm tiện ích chung (`h`, `icon`, `api`, `toast`, định dạng ngày) ra `public/app/ui.js`.
    - Chép logic từ `public/admin/admin.js` / `system.js`, **đổi đường dẫn API** sang `/api/me/...` (W2) và `/api/admin/...`.
    - Module quản trị chỉ `import()` khi `me.perms` có quyền (User không tải về code quản trị — chỉ để gọn, bảo mật vẫn ở máy chủ).
@@ -637,7 +656,7 @@ cho phép là web tự đồng bộ, không phải bấm lại mỗi giờ, khô
 - `test/e2e/app.e2e.mjs` (Playwright, Google giả): 3 tài khoản (owner, technician, user):
   - User: menu có đúng 6 mục (Tổng quan, Lịch, Công việc, Đề xuất, Nguồn, Tài khoản); vào thẳng `#/quan-tri/bot` → báo không có
     quyền, không gọi được API.
-  - Technician: có 3 mục Quản trị; trang Tài khoản người dùng không có nút sửa.
+  - Technician: có đúng 2 mục Quản trị (Quản lý bot lịch, Tài khoản người dùng), không có mục máy ảo; trang Tài khoản người dùng không có nút sửa.
   - Owner: đổi quyền user → technician; tải lại phiên của user đó thấy menu mới.
   - Tạo sự kiện / việc / đề xuất / nguồn ICS (máy chủ ICS giả) → hiện đúng; người khác không thấy.
   - Chụp ảnh từng màn hình (`SHOTS_DIR`) để người duyệt xem.
@@ -707,14 +726,14 @@ Chuẩn bị 3 Gmail: **O** (Owner, trong `OWNER_EMAILS`), **T** (sẽ thành Te
 | 1 | O, T, U lần lượt đăng nhập web bằng Google, cho phép Google Lịch | Cả ba: Tài khoản → Google Lịch **Đã kết nối** |
 | 2 | O vào Quản trị → Tài khoản người dùng, đổi T thành Technician | Nhật ký phân quyền có dòng; T tải lại thấy Quản trị |
 | 3 | T thử đổi quyền U (DevTools) | 403 |
-| 4 | U mở `#/quan-tri/may-ao` | Báo không có quyền |
+| 4 | U mở `#/quan-tri/bot` | Báo không có quyền |
 | 5 | Ba người lấy mã 6 số, nhắn riêng cho bot | Bot trả "✅ Đã liên kết…" (không còn chữ "nhớ mở app") |
 | 6 | O nhắn trong nhóm: "bot giao @T @U họp 9h mai" | Lịch vào Google Lịch của T và U trong ≤ 1 phút, **không ai mở web** |
 | 7 | "dời cuộc họp lúc nãy sang 10h", rồi "huỷ cuộc họp lúc nãy" | Google Lịch đổi giờ, rồi xoá |
 | 8 | Mở web của U → Lịch | Thấy sự kiện Google Lịch của U (kể cả lịch được giao, có nhãn "Được giao") |
 | 9 | U tạo việc, đề xuất (dán văn bản), nguồn ICS | Chỉ U thấy; O không thấy trong phần sử dụng của O |
 | 10 | Quản trị → Quản lý bot → Nhật ký bot lịch | Có dòng giao / sửa / huỷ, cột "đã ghi vào Google Lịch lúc …" |
-| 11 | PyloS: đăng nhập trang quản lý bằng Google (Gmail trong `ADMIN_EMAILS`) với `SCHEDULE_API_KEY` **bỏ trống** | Vào được |
+| 11 | PyloS: đăng nhập trang quản lý bằng Google (đúng Gmail `ADMIN_EMAIL`) với `SCHEDULE_API_KEY` **bỏ trống** | Vào được |
 | 12 | PyloS: Kết nối VPS bằng Google | Có công tắc Máy này / VPS |
 | 13 | Vercel Logs 1 giờ | Không có `/api/agent/heartbeat`, `/config`, `/sessions`, `/device-login` |
 | 14 | Hôm sau (≥ 24 giờ) giao lịch tiếp | Vẫn tự vào Google Lịch, không cần bấm gì |
