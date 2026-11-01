@@ -1,5 +1,5 @@
 // Mục "Tài khoản": hồ sơ, Google Lịch, liên kết Zalo, lịch đã được ghi vào Google Lịch, điều khoản, xoá tài khoản.
-import { h, icon, googleIcon, api, toast, guard, fTime, fDT, copyBox, ROLE_LABEL } from './ui.js';
+import { h, icon, googleIcon, api, toast, guard, fTime, fDT, ROLE_LABEL } from './ui.js';
 
 const OP = { create: 'Thêm', update: 'Sửa', delete: 'Xoá' };
 const GSTATUS = {
@@ -94,13 +94,6 @@ export async function renderAccount(root, ctx) {
     h('div', { class: 'card-head' }, h('h2', {}, 'Lịch được giao đã ghi vào Google Lịch')),
     items.length ? h('ul', { class: 'list' }, items) : h('p', { class: 'muted small' }, 'Chưa có. Khi ai đó giao lịch cho bạn trong nhóm Zalo, lịch sẽ hiện ở đây và trong Google Lịch. Giữ 90 ngày.'));
 
-  const extra = [];
-  if (me.calendarUrl) {
-    extra.push(h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, icon('calendar'), ' Đưa lịch lên điện thoại')),
-      h('p', { class: 'small muted' }, 'Thêm link này vào Google Calendar (Thêm lịch → Từ URL) hoặc iPhone (Cài đặt → Lịch → Tài khoản → Thêm lịch đã đăng ký). Là lịch của Owner chính, giữ link riêng tư.'),
-      copyBox(me.calendarUrl)));
-  }
-
   const danger = h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, 'Điều khoản và dữ liệu')),
     h('p', { class: 'small' }, h('a', { href: '/terms.html', target: '_blank' }, 'Điều khoản dịch vụ'), ' · ', h('a', { href: '/privacy.html', target: '_blank' }, 'Chính sách quyền riêng tư'),
       ` · bạn đã đồng ý bản ${me.termsVersion}`),
@@ -110,5 +103,5 @@ export async function renderAccount(root, ctx) {
       await api('DELETE', '/api/me'); toast('Đã xoá tài khoản'); await ctx.signOut();
     }) }, icon('trash'), 'Xoá tài khoản'));
 
-  root.replaceChildren(profile, googleCard, zaloCard, historyCard, ...extra, danger);
+  root.replaceChildren(profile, googleCard, zaloCard, historyCard, danger);
 }

@@ -28,7 +28,6 @@ test('tên miền cũ: chỉ còn API dùng chung (bot Zalo PyloS, webhook Zalo,
   assert.equal((await call('POST', '/api/agent/assign', { title: 'x' })).status, 401, 'PyloS vẫn gọi được (cần khoá)');
   assert.equal((await call('POST', '/api/zalo/webhook', {})).status, 403, 'webhook không bị chuyển hướng');
   assert.equal((await call('GET', '/api/cron')).status, 200);
-  assert.equal((await call('GET', '/calendar.ics?key=sai')).status, 401);
 });
 
 test('đăng nhập và link gửi cho mọi người nằm ở tên miền chính', async () => {

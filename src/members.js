@@ -300,8 +300,3 @@ export async function setGoogleStatus(id, patch) {
   await kv.set(K.user(id), u);
   return u;
 }
-
-// Khoá link .ics (Owner dùng để đưa lịch của mình lên điện thoại): suy ra từ bí mật ký phiên, không lưu thêm.
-export async function calendarKey() {
-  return crypto.createHmac('sha256', await secret()).update('calendar-v2').digest('hex').slice(0, 32);
-}

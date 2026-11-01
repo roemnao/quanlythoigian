@@ -19,7 +19,7 @@ import {
 import { dayKey, TZ, zonedMidnight } from './time.js';
 import { kv } from './kv.js';
 import {
-  acceptTerms, calendarKey, createZaloCode, deleteMember, getMember, linkZalo, listMembers, memberCookieValue, memberSettings,
+  acceptTerms, createZaloCode, deleteMember, getMember, linkZalo, listMembers, memberCookieValue, memberSettings,
   membersByZalo, publicMember, readAudit, saveMemberSettings, setGoogleStatus, setRole, signInMember, TERMS_VERSION, touchSeen, unlinkZalo,
   verifyMemberCookie,
 } from './members.js';
@@ -43,7 +43,7 @@ app.use(express.json({ limit: '1mb' }));
 // (PyloS và cron-job.org có thể còn trỏ vào tên miền cũ); các API còn lại chỉ có ở tên miền chính vì cookie nằm ở đó.
 const PRIMARY_HOST = String(process.env.PRIMARY_HOST || process.env.APP_HOST || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/[/:].*$/, '');
 const onPrimary = (req) => !PRIMARY_HOST || req.hostname.toLowerCase() === PRIMARY_HOST;
-const isSharedApi = (p) => p.startsWith('/api/agent/') || p === '/api/zalo/webhook' || p === '/api/cron' || p === '/calendar.ics';
+const isSharedApi = (p) => p.startsWith('/api/agent/') || p === '/api/zalo/webhook' || p === '/api/cron';
 app.use((req, res, next) => {
   if (onPrimary(req) || isSharedApi(req.path)) return next();
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Không có API này ở tên miền này' });
@@ -281,23 +281,6 @@ app.get('/api/cron', wrap(async (req, res) => {
   res.json(report);
 }));
 
-// ----- Link .ics của Owner chính (đưa lịch lên Google Calendar / iPhone) -----
-app.get('/calendar.ics', wrap(async (req, res) => {
-  if (!safeEqual(req.query.key || '', await calendarKey())) throw fail(401, 'Sai khoá lịch');
-  const store = await openOwnerStore();
-  const esc = (s) => String(s || '').replace(/([\\;,])/g, '\\$1').replace(/\r?\n/g, '\\n');
-  const fmt = (d) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//iforgotmywayhome//VI', 'X-WR-CALNAME:iforgotmywayhome'];
-  for (const e of store.data.events.filter((x) => x.origin !== 'ics' && x.origin !== 'google')) {
-    lines.push('BEGIN:VEVENT', `UID:${e.id}@iforgotmywayhome`, `DTSTAMP:${fmt(new Date())}`, `DTSTART:${fmt(e.start)}`,
-      `DTEND:${fmt(e.end || new Date(new Date(e.start).getTime() + 3600e3))}`, `SUMMARY:${esc(e.title)}`);
-    if (e.note) lines.push(`DESCRIPTION:${esc(e.note)}`);
-    lines.push('END:VEVENT');
-  }
-  lines.push('END:VCALENDAR');
-  res.type('text/calendar').send(lines.join('\r\n'));
-}));
-
 // ----- Đăng nhập Google: một lần cho cả tài khoản và quyền Google Lịch -----
 const OAUTH_COOKIE = 'qltg_oauth';
 const TERMS_COOKIE = 'qltg_terms';
@@ -417,7 +400,6 @@ app.get('/api/me', wrap(async (req, res) => {
     ...publicMember(u), termsCurrent: TERMS_VERSION,
     bot: { name: settings.botName || null, chatUrl: settings.botChatUrl || null },
     googleReady: googleConfigured(),
-    ...(can(u, 'bot:read') ? { calendarUrl: `${baseUrl(req)}/calendar.ics?key=${await calendarKey()}` } : {}),
   });
 }));
 app.post('/api/me/terms', wrap(async (req, res) => {
