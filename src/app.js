@@ -417,7 +417,7 @@ app.get('/api/me', wrap(async (req, res) => {
     ...publicMember(u), termsCurrent: TERMS_VERSION,
     bot: { name: settings.botName || null, chatUrl: settings.botChatUrl || null },
     googleReady: googleConfigured(),
-    ...(can(u, 'bot:read') ? { calendarUrl: `${baseUrl(req)}/calendar.ics?key=${await calendarKey()}` } : {}),
+    ...(can(u, 'accounts:write') ? { calendarUrl: `${baseUrl(req)}/calendar.ics?key=${await calendarKey()}` } : {}),
   });
 }));
 app.post('/api/me/terms', wrap(async (req, res) => {

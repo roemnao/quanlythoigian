@@ -97,7 +97,7 @@ export async function renderAccount(root, ctx) {
   const extra = [];
   if (me.calendarUrl) {
     extra.push(h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, icon('calendar'), ' Đưa lịch lên điện thoại')),
-      h('p', { class: 'small muted' }, 'Thêm link này vào Google Calendar (Thêm lịch → Từ URL) hoặc iPhone (Cài đặt → Lịch → Tài khoản → Thêm lịch đã đăng ký). Là lịch của Owner chính, giữ link riêng tư.'),
+      h('p', { class: 'small muted' }, 'Thêm link này vào Google Calendar (Thêm lịch → Từ URL) hoặc iPhone (Cài đặt → Lịch → Tài khoản → Thêm lịch đã đăng ký). Là lịch của riêng Owner chính; ai có link đều xem được nên đừng chia sẻ.'),
       copyBox(me.calendarUrl)));
   }
 
