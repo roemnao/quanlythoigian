@@ -354,3 +354,4 @@ pre.code { background: var(--field); border-radius: 2px; padding: 10px; font-siz
 .card.hero .legal { margin-top: 12px; }
 select.sm { padding: 3px 6px; font-size: .8rem; }
 .banner .btn { margin-left: 6px; }
+.login-card .about { margin: 0; line-height: 1.5; }
