@@ -168,6 +168,76 @@ await step('responsive: Owner ở 360/390/768/1024px, mọi mục không tràn n
   }
 });
 
+await step('PWA: manifest đủ trường, ảnh chụp và lối tắt tải được, service worker phục vụ đúng', async () => {
+  const res = await fetch(`${base}/manifest.webmanifest`);
+  assert.match(res.headers.get('content-type'), /application\/manifest\+json/);
+  const m = await res.json();
+  assert.equal(m.display, 'standalone'); assert.equal(m.id, '/'); assert.equal(m.scope, '/');
+  for (const size of ['192x192', '512x512']) assert.ok(m.icons.some((i) => i.sizes === size), `thiếu icon ${size}`);
+  assert.ok(m.icons.some((i) => i.purpose === 'maskable'));
+  assert.deepEqual(m.screenshots.map((s) => s.form_factor).sort(), ['narrow', 'wide']);
+  assert.equal(m.shortcuts.length, 3);
+  const files = [...m.icons, ...m.screenshots, ...m.shortcuts.flatMap((s) => s.icons)].map((i) => i.src);
+  for (const src of new Set(files)) assert.equal((await fetch(base + src)).status, 200, src);
+  const sw = await fetch(`${base}/sw.js`);
+  assert.equal(sw.status, 200); assert.match(sw.headers.get('content-type'), /javascript/);
+  assert.match(await sw.text(), /ifmwh-app-v5/);
+});
+
+await step('PWA: nút "Cài ứng dụng" hiện khi trình duyệt cho cài, ẩn sau khi cài; thanh nhắc có thể tắt', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
+  await ctx.addCookies([{ name: 'qltg_member', value: cookies.user, url: base }]);
+  await ctx.addInitScript(() => { try { localStorage.setItem('ifmwh-visits', '5'); localStorage.removeItem('ifmwh-install-dismissed'); } catch {} });
+  const p = await ctx.newPage();
+  await p.goto(`${base}/`); await p.waitForSelector('#app:not([hidden])');
+  assert.equal(await p.isVisible('#install-bar'), false, 'chưa có sự kiện thì không hiện');
+  await p.evaluate(() => {
+    const e = new Event('beforeinstallprompt'); e.prompt = () => { window.__prompted = true; };
+    e.userChoice = Promise.resolve({ outcome: 'accepted' }); window.dispatchEvent(e);
+  });
+  assert.equal(await p.isVisible('#install-bar'), true);
+  assert.equal(await p.isVisible('.sidebar-foot [data-install]'), true);
+  await p.click('#install-bar [data-install]');
+  assert.equal(await p.evaluate(() => window.__prompted), true);
+  await p.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+  assert.equal(await p.isVisible('#install-bar'), false);
+  assert.equal(await p.isVisible('.sidebar-foot [data-install]'), false);
+  await ctx.close();
+});
+
+await step('PWA: iPhone Safari thấy hướng dẫn Thêm vào Màn hình chính', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block',
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1' });
+  await ctx.addCookies([{ name: 'qltg_member', value: cookies.user, url: base }]);
+  await ctx.addInitScript(() => { try { localStorage.setItem('ifmwh-visits', '5'); } catch {} });
+  const p = await ctx.newPage();
+  await p.goto(`${base}/`); await p.waitForSelector('#app:not([hidden])');
+  assert.match(await p.textContent('#install-text'), /Thêm vào Màn hình chính/);
+  assert.equal(await p.isVisible('#install-bar [data-install]'), false);
+  await p.click('#install-close');
+  assert.equal(await p.isVisible('#install-bar'), false);
+  await ctx.close();
+});
+
+await step('PWA: mở lại khi mất mạng vẫn thấy giao diện, có banner ngoại tuyến', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addCookies([{ name: 'qltg_member', value: cookies.user, url: base }]);
+  const p = await ctx.newPage();
+  await p.goto(`${base}/`); await p.waitForSelector('#app:not([hidden])');
+  await p.evaluate(() => navigator.serviceWorker.ready);
+  await p.reload(); // để service worker nắm quyền điều khiển trang
+  await p.waitForSelector('#app:not([hidden])');
+  await ctx.setOffline(true);
+  assert.equal(await p.isVisible('#offline-bar'), true, 'banner ngoại tuyến');
+  await p.reload().catch(() => {});
+  // Dữ liệu luôn lấy từ máy chủ: mất mạng thì vỏ giao diện vẫn mở và báo rõ, có nút Thử lại (không hiện trang lỗi của trình duyệt).
+  await p.waitForSelector('#signin-body button', { timeout: 5000 });
+  assert.ok((await p.title()).includes('iforgotmywayhome'));
+  assert.match(await p.textContent('#signin-body'), /ngoại tuyến/);
+  await ctx.setOffline(false);
+  await ctx.close();
+});
+
 await browser.close();
 server.close();
 if (failed) { console.log('\nCó bước thất bại.'); process.exit(1); }

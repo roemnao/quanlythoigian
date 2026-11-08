@@ -407,3 +407,14 @@ pre.code { background: var(--field); border-radius: 2px; padding: 10px; font-siz
 select.sm { padding: 3px 6px; font-size: .8rem; }
 .banner .btn { margin-left: 6px; }
 .login-card .about { margin: 0; line-height: 1.5; }
+
+/* ---------- Cài ứng dụng (PWA) ---------- */
+.banner.install { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.banner.install #install-text { flex: 1 1 220px; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.banner.install .btn { margin: 0; }
+.sidebar-foot .btn[data-install] { justify-content: flex-start; padding-left: 0; }
+@media (display-mode: standalone) {
+  .main { padding-top: calc(24px + env(safe-area-inset-top)); }
+  .screen { padding-top: calc(16px + env(safe-area-inset-top)); }
+}
+@media (display-mode: standalone) and (max-width: 640px) { .main { padding-top: calc(16px + env(safe-area-inset-top)); } }

@@ -1,11 +1,15 @@
 // Service worker của web app: giao diện mở được cả khi mạng chập chờn. Không bao giờ lưu dữ liệu /api.
 // Đăng ký với scope "/" (web app ở tên miền riêng) hoặc "/app/" (dùng chung tên miền với trang quản trị).
-const CACHE = 'ifmwh-app-v4'; // đổi số này mỗi khi giao diện đổi, để máy đã cài app bỏ bản cũ
+const CACHE = 'ifmwh-app-v5'; // đổi số này mỗi khi giao diện đổi, để máy đã cài app bỏ bản cũ
 const BASE = new URL(self.registration.scope).pathname;
-const SHELL = [BASE, '/manifest.webmanifest', '/app/main.js', '/app/ui.js', '/app/account.js', '/app/admin-bot.js', '/app/admin-accounts.js', '/app/app.css', '/theme.css', '/theme.js', '/icon.svg'];
+const SHELL = [BASE, '/manifest.webmanifest', '/app/main.js', '/app/ui.js', '/app/install.js', '/app/account.js', '/app/admin-bot.js', '/app/admin-accounts.js', '/app/app.css', '/theme.css', '/theme.js', '/icon.svg', '/app/icon-192.png',
+  // Font tiếng Việt: lần mở đầu tiên khi mất mạng vẫn đúng font
+  '/fonts/be-vietnam-pro-vietnamese-400-normal.woff2', '/fonts/be-vietnam-pro-vietnamese-500-normal.woff2', '/fonts/be-vietnam-pro-vietnamese-600-normal.woff2',
+  '/fonts/be-vietnam-pro-latin-400-normal.woff2', '/fonts/be-vietnam-pro-latin-500-normal.woff2', '/fonts/be-vietnam-pro-latin-600-normal.woff2',
+  '/fonts/cormorant-garamond-vietnamese-600-normal.woff2', '/fonts/cormorant-garamond-latin-600-normal.woff2', '/fonts/cinzel-latin-600-normal.woff2'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => Promise.all(SHELL.map((u) => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {

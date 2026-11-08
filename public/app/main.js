@@ -1,5 +1,6 @@
 // Web iforgotmywayhome: một giao diện cho mọi người (JS thuần, không cần build).
 // Menu hiện theo quyền (me.perms): User chỉ có phần sử dụng; Owner / Technician có thêm Quản trị. Máy chủ kiểm quyền lại ở mọi API.
+import './install.js';
 import { $, $$, h, icon, googleIcon, api, toast, guard, onApiEvents, ROLE_LABEL, can } from './ui.js';
 
 let S = null; // dữ liệu riêng của người đang đăng nhập (lịch, việc, đề xuất, nguồn…)
@@ -667,7 +668,7 @@ async function boot() {
   const data = res ? await res.json().catch(() => ({})) : {};
   if (!res || (res.status !== 200 && res.status !== 401)) {
     showScreen('signin');
-    $('#signin-body').replaceChildren(h('p', { class: 'err' }, data.error || 'Không kết nối được máy chủ.'),
+    $('#signin-body').replaceChildren(h('p', { class: 'err' }, data.error || (navigator.onLine ? 'Không kết nối được máy chủ.' : 'Bạn đang ngoại tuyến. Bật mạng rồi bấm Thử lại.')),
       h('button', { class: 'btn', type: 'button', onclick: () => location.reload() }, 'Thử lại'));
     return;
   }
@@ -693,7 +694,28 @@ if (qs.has('google') || qs.has('google_error')) {
   setTimeout(() => toast(err ? `⚠️ ${err}` : `${done[qs.get('google')] || 'Xong'}.${calendar}`, 8000), 400);
 }
 try { const m = localStorage.getItem('calMode'); if (m === 'week' || m === 'month') cal.mode = m; } catch {}
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+if ('serviceWorker' in navigator) {
+  // Có bản mới: báo để người dùng tải lại (không tự tải lại, tránh mất dữ liệu đang nhập).
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return;
+    const t = $('#toast');
+    t.replaceChildren('Có bản mới. ', h('button', { class: 'btn sm', type: 'button', onclick: () => location.reload() }, 'Tải lại'));
+    t.hidden = false; clearTimeout(toast.timer);
+  });
+  navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((reg) => {
+    // App cài trên điện thoại có thể chạy nhiều ngày không tải lại: mỗi lần mở lại thì kiểm tra bản mới.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
+}
+// Ngoại tuyến: dữ liệu luôn lấy từ máy chủ nên cần báo rõ.
+function netBanner() {
+  const b = $('#offline-bar');
+  if (b) b.hidden = navigator.onLine;
+}
+addEventListener('online', () => { netBanner(); if (ME && S) guard(load)(); });
+addEventListener('offline', netBanner);
+netBanner();
 pomoDraw();
 boot();
 setInterval(() => { if (!document.hidden && ME && S && !modal.open && !$('#app').hidden && view !== 'account' && !view.startsWith('admin')) guard(load)(); }, 60000);
