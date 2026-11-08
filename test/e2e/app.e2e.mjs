@@ -55,7 +55,7 @@ const shot = async (p, name) => { if (shots) await p.screenshot({ path: path.joi
 async function step(name, fn) {
   try { await fn(); console.log(`ok   ${name}`); } catch (e) { failed = true; console.log(`FAIL ${name}\n     ${e.message}`); }
 }
-const navLabels = (p) => p.$$eval('#nav button span', (els) => els.map((e) => e.textContent));
+const navLabels = (p) => p.$$eval('#nav button[data-view] span', (els) => els.map((e) => e.textContent));
 
 await step('chưa đăng nhập: màn hình đăng nhập Google, bắt buộc tick điều khoản', async () => {
   const p = await open(null);
@@ -138,6 +138,33 @@ await step('điện thoại và nền sáng: menu và nội dung không tràn ng
     const overflow = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(overflow <= 1, `tràn ngang ${overflow}px (${theme})`);
     await shot(p, `mobile-${theme}`);
+  }
+});
+
+await step('responsive: Owner ở 360/390/768/1024px, mọi mục không tràn ngang; điện thoại có nút Thêm, vùng chạm ≥ 44px', async () => {
+  const hashes = ['tong-quan', 'lich', 'cong-viec', 'de-xuat', 'nguon', 'tai-khoan', 'quan-tri/bot', 'quan-tri/tai-khoan'];
+  for (const [w, h] of [[360, 740], [390, 844], [768, 1024], [1024, 768]]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: w < 1024, hasTouch: w < 1024, serviceWorkers: 'block' });
+    await ctx.addCookies([{ name: 'qltg_member', value: cookies.owner, url: base }]);
+    const p = await ctx.newPage();
+    await p.goto(`${base}/`); await p.waitForSelector('#app:not([hidden])');
+    for (const hash of hashes) {
+      await p.evaluate((x) => { location.hash = `#/${x}`; }, hash); await p.waitForTimeout(150);
+      const over = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(over <= 1, `${w}px ${hash}: tràn ngang ${over}px`);
+    }
+    if (w <= 640) {
+      const sizes = await p.$$eval('#nav > button', (bs) => bs.map((b) => b.getBoundingClientRect()).map((r) => [r.width, r.height]));
+      assert.equal(sizes.length, 5, 'điện thoại: 4 mục chính + Thêm');
+      for (const [bw, bh] of sizes) assert.ok(bw >= 44 && bh >= 44, `${w}px: nút điều hướng ${bw}x${bh} nhỏ hơn 44px`);
+      await p.click('#more-btn');
+      await p.click('#nav-more button[data-view=admin-accounts]');
+      assert.equal(await p.evaluate(() => location.hash), '#/quan-tri/tai-khoan');
+      assert.equal(await p.evaluate(() => document.getElementById('nav-more').classList.contains('open')), false);
+    } else if (w < 900) {
+      assert.equal(await p.isVisible('#more-btn'), false, 'máy tính bảng không có nút Thêm');
+    }
+    await ctx.close();
   }
 });
 

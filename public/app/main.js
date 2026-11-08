@@ -49,24 +49,41 @@ const VIEWS = {
 const allowed = (name) => VIEWS[name] && (!VIEWS[name].perm || can(ME, VIEWS[name].perm));
 const fromHash = () => Object.keys(VIEWS).find((k) => `#/${VIEWS[k].hash}` === location.hash) || 'dashboard';
 
+// Điện thoại: 4 mục chính ở đáy + nút "Thêm" mở ngăn chứa các mục còn lại. Máy tính bảng / máy tính: CSS hiện tất cả như cũ.
+const PRIMARY_VIEWS = ['dashboard', 'calendar', 'tasks', 'inbox'];
 function buildNav() {
   const nav = $('#nav');
   const items = [];
+  const more = h('div', { class: 'nav-more', id: 'nav-more' });
   let group = null;
   for (const [name, v] of Object.entries(VIEWS)) {
     if (!allowed(name)) continue;
-    if (v.group && v.group !== group) { group = v.group; items.push(h('div', { class: 'nav-group' }, v.group)); }
-    const b = h('button', { 'data-view': name, type: 'button' }, icon(v.icon), h('span', {}, v.title));
+    const dest = PRIMARY_VIEWS.includes(name) ? { push: (x) => items.push(x) } : { push: (x) => more.append(x) };
+    if (v.group && v.group !== group) { group = v.group; dest.push(h('div', { class: 'nav-group' }, v.group)); }
+    const b = h('button', { 'data-view': name, type: 'button', title: v.title }, icon(v.icon), h('span', {}, v.title));
     if (name === 'inbox') b.append(h('b', { class: 'count', id: 'inbox-count', hidden: true }));
-    b.addEventListener('click', () => { location.hash = `#/${v.hash}`; });
-    items.push(b);
+    b.addEventListener('click', () => { closeMore(); location.hash = `#/${v.hash}`; });
+    dest.push(b);
   }
-  nav.replaceChildren(...items);
+  const moreBtn = h('button', { type: 'button', class: 'more-btn', id: 'more-btn', 'aria-expanded': 'false', 'aria-controls': 'nav-more' }, icon('settings'), h('span', {}, 'Thêm'));
+  moreBtn.addEventListener('click', () => {
+    const open = !more.classList.contains('open');
+    more.classList.toggle('open', open); moreBtn.setAttribute('aria-expanded', String(open));
+  });
+  nav.replaceChildren(...items, moreBtn, more);
 }
+function closeMore() {
+  $('#nav-more')?.classList.remove('open');
+  $('#more-btn')?.setAttribute('aria-expanded', 'false');
+}
+document.addEventListener('click', (e) => { if (!e.target.closest('#nav')) closeMore(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMore(); });
 
 function setView(name) {
   view = allowed(name) ? name : 'dashboard';
-  $$('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+  $$('#nav button[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+  $('#more-btn')?.classList.toggle('on', !PRIMARY_VIEWS.includes(view));
+  closeMore();
   $$('.view').forEach((s) => s.classList.toggle('on', s.dataset.view === view));
   $('#view-title').textContent = VIEWS[view].title;
   const act = $('#top-action');
@@ -267,6 +284,10 @@ function chip(e) {
 function dueChip(t) {
   return h('div', { class: 'chip due', title: `Hạn: ${t.title}`, onclick: (ev) => { ev.stopPropagation(); openTaskModal(t); } }, '⏰ ', t.title);
 }
+// Điện thoại / máy tính bảng dọc: danh sách ngày nằm dưới lịch, cuộn tới để người dùng thấy ngay.
+function showDayPanel() {
+  if (matchMedia('(max-width: 1100px)').matches) $('.day-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
 function renderCalendar() {
   const today = dkey(new Date());
   if (!cal.sel) cal.sel = today;
@@ -284,7 +305,7 @@ function renderCalendar() {
       const items = [...eventsOn(k).map(chip), ...dueOn(k).map(dueChip)];
       cells.push(h('div', {
         class: ['cell', d.getMonth() !== first.getMonth() && 'out', k === today && 'today', k === cal.sel && 'sel'].filter(Boolean).join(' '),
-        onclick: () => { cal.sel = k; renderCalendar(); },
+        onclick: () => { cal.sel = k; renderCalendar(); showDayPanel(); },
         ondblclick: () => openEventModal(null, k),
       }, h('span', { class: 'num' }, d.getDate()), items.slice(0, 3), items.length > 3 && h('span', { class: 'more' }, `+${items.length - 3} nữa`)));
     }
