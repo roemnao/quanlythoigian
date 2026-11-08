@@ -3,6 +3,21 @@
 > Mục tiêu: người dùng bấm một nút trong web là có icon **iforgotmywayhome** trên màn hình chính, mở toàn màn hình như app thật
 > (giống chess.com trên Chrome). Không cần đưa lên CH Play hay App Store.
 
+## Trạng thái thực hiện
+
+**Đã làm trong code, có kiểm thử tự động** (nhánh `ccr-4c033ca3-9xy4gn`): web 66/66, e2e đều qua (có 4 bước PWA mới).
+
+| Giai đoạn | Kết quả |
+|---|---|
+| A. Manifest | Xong: `id`, `dir`, `orientation`, `categories`, 2 ảnh chụp (`public/app/screenshot-narrow.png` 540x960, `screenshot-wide.png` 1280x720), 3 lối tắt (Lịch, Công việc, Đề xuất), 3 thẻ meta iOS/Android. **Khác kế hoạch:** giữ `start_url: '/'` (không thêm `?source=pwa`, vì `test/primary-host.test.js` kiểm `/` và web chưa dùng số liệu này); dùng một thẻ `theme-color` vì `theme.js` đã đổi màu khi bấm sáng/tối |
+| B. Nút cài | Xong: `public/app/install.js`. Thanh nhắc trong `#app` (sau 2 lần mở, tắt "Để sau" thì im 14 ngày), nút ở chân thanh bên, hướng dẫn riêng cho iPhone Safari và cho Chrome/Firefox trên iOS, tự ẩn khi đã cài |
+| C. Service worker | Xong: cache `v5`, thêm `install.js`, icon 192 và font tiếng Việt vào bộ nhớ, một file lỗi không làm hỏng cả lần cài; toast "Có bản mới · Tải lại"; kiểm tra bản mới mỗi lần mở lại app; banner ngoại tuyến; mất mạng thì vỏ giao diện vẫn mở và báo "Bạn đang ngoại tuyến" kèm nút Thử lại |
+| D. Chạy dạng app | Xong phần code: chừa tai thỏ (`safe-area-inset-top`) khi `display-mode: standalone`; link ngoài đã có `target="_blank"`; cookie đăng nhập đã 180 ngày. **Chưa làm được:** D.1 (đăng nhập Google trong app đã cài) và D.5 (chuyển hướng tên miền) cần thử trên thiết bị thật và tên miền thật |
+| E. Kiểm thử | Xong phần tự động. **Chưa làm được:** Lighthouse và thử trên Android, iPhone thật |
+
+**Người vận hành cần làm:** deploy Preview trên Vercel, rồi làm bảng thử thiết bị thật ở mục E.3 (đặc biệt D.1 trên iPhone). Nếu đăng nhập
+Google hỏng trong app trên iPhone thì báo lại để đổi cách đăng nhập (phương án đã ghi ở D.1).
+
 ## 0. Hiện trạng (đã có sẵn trong repo)
 
 | Thành phần | Nơi | Tình trạng |

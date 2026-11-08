@@ -843,9 +843,13 @@ app.get(['/manifest.webmanifest', '/app/manifest.webmanifest'], (req, res) => {
     short_name: 'iforgotmywayhome',
     description: 'Lịch, việc cần làm, và lịch được giao trong nhóm Zalo tự vào Google Lịch của bạn',
     lang: 'vi',
+    dir: 'ltr',
+    id: '/',
     start_url: '/',
     scope: '/',
     display: 'standalone',
+    orientation: 'any',
+    categories: ['productivity', 'utilities'],
     background_color: '#1d1f24',
     theme_color: '#1d1f24',
     icons: [
@@ -853,6 +857,17 @@ app.get(['/manifest.webmanifest', '/app/manifest.webmanifest'], (req, res) => {
       { src: '/app/icon-512.png', sizes: '512x512', type: 'image/png' },
       { src: '/app/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
       { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+    ],
+    // Có ảnh chụp thì Chrome Android hiện hộp cài đặt lớn có ảnh (điện thoại: narrow, máy tính: wide).
+    screenshots: [
+      { src: '/app/screenshot-narrow.png', sizes: '540x960', type: 'image/png', form_factor: 'narrow', label: 'Tổng quan trên điện thoại' },
+      { src: '/app/screenshot-wide.png', sizes: '1280x720', type: 'image/png', form_factor: 'wide', label: 'Lịch trên máy tính' },
+    ],
+    // Nhấn giữ icon để vào thẳng mục cần dùng.
+    shortcuts: [
+      { name: 'Lịch', short_name: 'Lịch', url: '/#/lich', icons: [{ src: '/app/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+      { name: 'Công việc', short_name: 'Công việc', url: '/#/cong-viec', icons: [{ src: '/app/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+      { name: 'Đề xuất', short_name: 'Đề xuất', url: '/#/de-xuat', icons: [{ src: '/app/icon-192.png', sizes: '192x192', type: 'image/png' }] },
     ],
   }));
 });
